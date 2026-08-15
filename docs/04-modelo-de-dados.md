@@ -39,7 +39,8 @@ Nunca armazenados — sempre calculados do croqui:
 
 - **Canais**: pixels primeiro (ordenados por Y depois X), depois heads (por X)
 - **Grupos**: `g-todas`, `g-sup` / `g-inf` pela média de Y, `g-heads`
-- **Footprint**: pixel = `n × 3`; head = tamanho do perfil
+- **Footprint**: pixel = `n × bytes do node` — 3 em RGB/GRB/BRG, 4 em RGBW;
+  head = tamanho do perfil
 
 ## Trilha e clip
 

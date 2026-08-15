@@ -2,35 +2,31 @@
 
 ## Ordem, e o porquê dela
 
-### 1. Exportador `.fseq` ← próximo passo
-
-**É o que destrava o hardware.** Enquanto não sai fseq, o sequenciador é uma tela bonita.
-
-Com o exportador funcionando dá pra usar o **xLights como validador**: sequencia lá,
-exporta, toca no player próprio, compara. Ferramenta de teste de graça.
-
-Formato aberto e documentado. Suportar V2 com compressão desde o início.
-
-### 2. Firmware base do ESP32-S3
+### 1. Firmware base do ESP32-S3 ← próximo passo
 
 - USB CDC, protocolo de upload com chunk + CRC + resume
 - SD_MMC, gravação atômica com `.tmp` + rename, manifest
 - RMT pra pixel, `esp_dmx` na UART2
 - Animação de fallback quando a serial cala
 
-### 3. Player no APK da mídia
+O leitor de fseq do ESP tem contrato escrito e testado do outro lado:
+`docs/08-formato-fseq.md` e `web/src/motor/fseq.js`. Descompressão é zlib, que
+já vem no ESP-IDF.
+
+### 2. Player no APK da mídia
 
 Leitor de fseq, transporte, timecode pela serial.
 
-### 4. WebSerial no sequenciador
+### 3. WebSerial no sequenciador
 
 Gravar direto no ESP a partir do browser, sem app nativo no meio.
+Hoje o exportador baixa o arquivo; falta a ponte até o cartão.
 
-### 5. Áudio de verdade
+### 4. Áudio de verdade
 
 Detecção de BPM, marcadores editáveis, zoom.
 
-### 6. Value curves
+### 5. Value curves
 
 Animar qualquer parâmetro ao longo do clip.
 
@@ -42,6 +38,15 @@ Animar qualquer parâmetro ao longo do clip.
 - Preview com gobos, feixes e pixel ao vivo
 - Três modos de layout: Palco, Mesa, Estúdio
 - Relógio master no AudioContext
+- **Exportador `.fseq` V2 com zlib**, e o motor separado em `motor/` +
+  `modelo/` pra rodar headless. Teste automatizado com `npm test`
+
+## Pendências que o exportador deixou
+
+- **Faixas rotuladas no perfil.** Gobo e shutter saem por convenção, não pela
+  tabela DMX da cabeça. Ver a seção de provisórios em `08-formato-fseq.md` —
+  é o que precisa estar certo antes do primeiro show com cabeça nova
+- **zstd**, se um dia um arquivo de fora exigir
 
 ## Trocas pra quando crescer
 

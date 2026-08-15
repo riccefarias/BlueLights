@@ -1,276 +1,13 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 
-/* ============================================================
-   ESPAÇO VIRTUAL
-   Tudo é posicionado num palco de 1000x700 e o canvas
-   faz letterbox. Redimensionar não move nada de lugar.
-   ============================================================ */
-/* ============================================================
-   PERFIS — a "personalidade" de cada fixture.
-   O efeito fala em capacidade (tilt, gobo). O perfil traduz
-   pra canal. Trocar de cabeça não quebra sequência nenhuma.
-   ============================================================ */
-const CAP = {
-  pan: "Pan", tilt: "Tilt", dim: "Dimmer", shut: "Shutter / strobo",
-  color: "Roda de cor", gobo: "Gobo", grot: "Rotacao de gobo",
-  prism: "Prisma", focus: "Foco", r: "Vermelho", g: "Verde", b: "Azul",
-  w: "Branco", speed: "Velocidade", fn: "Funcao / reset",
-  fog: "Saida de fumaca", fan: "Ventilador",
-  pat: "Padrao", x: "Eixo X", y: "Eixo Y", rgb: "Cor RGB",
-};
-
-// Gobos sao FORMAS projetadas. A cor vem por outro canal.
-const GOBOS = ["aberto", "pontos", "estrela", "listras", "quebrado", "espiral"];
-
-const CAT = { head: "Moving head", par: "Par / wash", strobe: "Strobo DMX",
-  fog: "Fumaca", laser: "Laser" };
-
-const PROFILES = {
-  "beam-16": { name: "Beam 7R \u00b7 com gobo", cat: "head", ch: [
-    "pan","pan+","tilt","tilt+","speed","dim","shut","color",
-    "gobo","grot","prism","focus","fn","r","g","b"] },
-  "mini-11": { name: "Mini beam \u00b7 com gobo", cat: "head", ch: [
-    "pan","tilt","speed","dim","shut","color","gobo","grot","fn","r","g"] },
-  "wash-12": { name: "Wash RGBW \u00b7 sem gobo", cat: "head", ch: [
-    "pan","pan+","tilt","tilt+","speed","dim","shut","color","r","g","b","w"] },
-  "par-4":  { name: "Par LED RGBW", cat: "par", ch: ["r","g","b","w"] },
-  "par-7":  { name: "Par LED \u00b7 com dimmer", cat: "par", ch: ["dim","shut","r","g","b","w","speed"] },
-  "stb-2":  { name: "Strobo DMX", cat: "strobe", ch: ["dim","shut"] },
-  "fog-2":  { name: "M\u00e1quina de fuma\u00e7a", cat: "fog", ch: ["fan","fog"] },
-  "las-8":  { name: "Laser RGB", cat: "laser", ch: ["fn","pat","grot","x","y","speed","r","g"] },
-};
-
-const chKey = c => c.replace("+", "");
-const chLb = c => CAP[chKey(c)] + (c.endsWith("+") ? " fino" : "");
-const profOf = it => PROFILES[it.pf] || PROFILES["mini-11"];
-const footprint = it => it.k === "head" ? profOf(it).ch.length : 0;
-
-const VW = 1000, VH = 700;
-
-const COLOR_ORDER = ["RGB", "GRB", "BRG", "RGBW"];
-
-const KIND = {
-  cab:   { label: "Caixa",       nodes: 0,  w: 420, h: 150, pixel: false },
-  farol: { label: "Farol AJK",   nodes: 3,  w: 88,  h: 24,  pixel: true },
-  fita:  { label: "Fita",        nodes: 12, w: 240, h: 14,  pixel: true },
-  head:  { label: "Moving head", nodes: 0,  w: 32,  h: 26,  pixel: false, dmx: 14 },
-};
-
-const RIG_PADRAO = [
-  { id: "cab-sup", k: "cab",   lb: "Caixa superior", x: 500, y: 252, w: 420, h: 150 },
-  { id: "cab-inf", k: "cab",   lb: "Caixa inferior", x: 500, y: 424, w: 420, h: 150 },
-  { id: "f1", k: "farol", lb: "Sup · Kaos L", x: 374, y: 310, n: 3 },
-  { id: "f2", k: "farol", lb: "Sup · Bravox", x: 500, y: 310, n: 3 },
-  { id: "f3", k: "farol", lb: "Sup · Kaos R", x: 626, y: 310, n: 3 },
-  { id: "f4", k: "farol", lb: "Inf · Kaos L", x: 374, y: 482, n: 3 },
-  { id: "f5", k: "farol", lb: "Inf · Bravox", x: 500, y: 482, n: 3 },
-  { id: "f6", k: "farol", lb: "Inf · Kaos R", x: 626, y: 482, n: 3 },
-  { id: "h1", k: "head", lb: "Head esquerda", x: 220, y: 76, pf: "beam-16" },
-  { id: "h2", k: "head", lb: "Head centro",   x: 500, y: 76, pf: "wash-12" },
-  { id: "h3", k: "head", lb: "Head direita",  x: 780, y: 76, pf: "beam-16" },
-];
-
-const BPM = 128, BEAT = 60 / BPM, BARS = 8, DURATION = BEAT * 4 * BARS;
-
-const EFFECTS = {
-  wash:   { label: "Lavagem", color: "#7A5CFF", needs: ["rgb"] },
-  chase:  { label: "Corrida", color: "#00C2A8", needs: ["rgb"] },
-  pulse:  { label: "Pulso", color: "#2B6BFF", needs: ["rgb"] },
-  strobe: { label: "Strobo", color: "#2B6BFF", needs: ["rgb"] },
-  sweep:  { label: "Varredura", color: "#FFA023", needs: ["pan", "tilt"] },
-  beam:   { label: "Feixe", color: "#FFA023", needs: ["dim"] },
-  gobos:  { label: "Troca de gobo", color: "#FFA023", needs: ["gobo"] },
-  gspin:  { label: "Gobo girando", color: "#FFA023", needs: ["grot"] },
-  wheel:  { label: "Roda de cor", color: "#FFA023", needs: ["color"] },
-  prisma: { label: "Prisma", color: "#FFA023", needs: ["prism"] },
-  jato:   { label: "Jato de fuma\u00e7a", color: "#8A97AB", needs: ["fog"] },
-  lsweep: { label: "Varredura laser", color: "#FF3B6B", needs: ["x", "y"] },
-};
-
-// Capacidades de um alvo: fixture solta ou grupo inteiro.
-function capsOf(id, d, rig) {
-  const grp = d.groups.find(g => g.id === id);
-  const ids = grp ? grp.members : [id];
-  const set = new Set();
-  ids.forEach(i => {
-    const it = rig.find(x => x.id === i); if (!it) return;
-    if (KIND[it.k].pixel) set.add("rgb");
-    else if (it.k === "head") profOf(it).ch.forEach(c => set.add(chKey(c)));
-  });
-  return set;
-}
-
-// Quantos membros do alvo realmente respondem a um efeito.
-function responders(fxKey, id, d, rig) {
-  const grp = d.groups.find(g => g.id === id);
-  const ids = grp ? grp.members : [id];
-  const need = EFFECTS[fxKey].needs;
-  const ok = ids.filter(i => { const c = capsOf(i, d, rig); return need.every(n => c.has(n)); });
-  return { ok: ok.length, total: ids.length };
-}
-
-const TRACKS = [
-  { target: "g-todas", kind: "pixel", clips: [
-    { id: "c1", fx: "wash", t0: 0, t1: BEAT * 16, p: { rate: 0.18, spread: 1 } },
-    { id: "c2", fx: "pulse", t0: BEAT * 16, t1: BEAT * 24, p: { div: 1, hue: 0.58 } } ]},
-  { target: "g-sup", kind: "pixel", clips: [
-    { id: "c3", fx: "chase", t0: BEAT * 4, t1: BEAT * 16, p: { speed: 1.1, hue: 0.55 } },
-    { id: "c4", fx: "strobe", t0: BEAT * 24, t1: BEAT * 32, p: { div: 4, hue: 0, sat: 0 } } ]},
-  { target: "g-inf", kind: "pixel", clips: [
-    { id: "c5", fx: "chase", t0: BEAT * 4, t1: BEAT * 16, p: { speed: -1.1, hue: 0.88 } },
-    { id: "c6", fx: "strobe", t0: BEAT * 24, t1: BEAT * 32, p: { div: 4, hue: 0, sat: 0 } } ]},
-  { target: "g-heads", kind: "dmx", clips: [
-    { id: "c20", fx: "gobos", t0: BEAT * 8, t1: BEAT * 20, p: { div: 2 } } ]},
-  { target: "g-heads", kind: "dmx", clips: [
-    { id: "c21", fx: "gspin", t0: BEAT * 12, t1: BEAT * 20, p: { rate: .35 } } ]},
-  { target: "h1", kind: "dmx", clips: [
-    { id: "c9", fx: "sweep", t0: 0, t1: BEAT * 20, p: { rate: 0.25, range: 0.7, hue: 0.6 } },
-    { id: "c10", fx: "beam", t0: BEAT * 24, t1: BEAT * 32, p: { div: 2, hue: 0, sat: 0 } } ]},
-  { target: "h2", kind: "dmx", clips: [
-    { id: "c11", fx: "sweep", t0: BEAT * 8, t1: BEAT * 24, p: { rate: 0.4, range: 0.35, hue: 0.1 } } ]},
-  { target: "h3", kind: "dmx", clips: [
-    { id: "c12", fx: "sweep", t0: 0, t1: BEAT * 20, p: { rate: -0.25, range: 0.7, hue: 0.6 } },
-    { id: "c13", fx: "beam", t0: BEAT * 24, t1: BEAT * 32, p: { div: 2, hue: 0, sat: 0 } } ]},
-];
-
-const SCENES = [
-  { id: "s1", name: "Abertura", sub: "lavagem lenta", t0: 0, t1: BEAT * 16, c: "#7A5CFF" },
-  { id: "s2", name: "Corrida", sub: "espelhada", t0: BEAT * 4, t1: BEAT * 16, c: "#00C2A8" },
-  { id: "s3", name: "Subida", sub: "pulso no kick", t0: BEAT * 16, t1: BEAT * 24, c: "#2B6BFF" },
-  { id: "s4", name: "Drop", sub: "strobo branco", t0: BEAT * 24, t1: BEAT * 32, c: "#FF3B6B" },
-  { id: "s5", name: "Faixa toda", sub: "8 compassos", t0: 0, t1: DURATION, c: "#FFA023" },
-];
-
-/* ============================================================
-   DERIVADOS DO CROQUI — canais e grupos saem da posição.
-   ============================================================ */
-
-function nodesOf(it) { return it.n ?? KIND[it.k].nodes; }
-function sizeOf(it) { return { w: it.w ?? KIND[it.k].w, h: it.h ?? KIND[it.k].h }; }
-
-function derive(rig) {
-  const pix = rig.filter(i => KIND[i.k].pixel)
-    .sort((a, b) => (a.y - b.y) || (a.x - b.x));
-  const heads = rig.filter(i => i.k === "head").sort((a, b) => a.x - b.x);
-
-  const chan = {};
-  let c = 1;
-  pix.forEach(i => { chan[i.id] = c; c += nodesOf(i) * 3; });
-  heads.forEach(h => { chan[h.id] = c; c += footprint(h); });
-
-  const mid = pix.length ? pix.reduce((s, i) => s + i.y, 0) / pix.length : VH / 2;
-  const groups = [
-    { id: "g-todas", label: "Todas as caixas", members: pix.map(i => i.id) },
-    { id: "g-sup", label: "Caixa superior", members: pix.filter(i => i.y < mid).map(i => i.id) },
-    { id: "g-inf", label: "Caixa inferior", members: pix.filter(i => i.y >= mid).map(i => i.id) },
-    { id: "g-heads", label: "Todas as heads", members: heads.map(h => h.id) },
-  ];
-  const totalNodes = pix.reduce((s, i) => s + nodesOf(i), 0);
-  return { pix, heads, chan, groups, totalNodes, totalCh: c - 1 };
-}
-
-/* ============================================================
-   MOTOR — puro, sem React.
-   ============================================================ */
-
-function hsv(h, s, v) {
-  h = ((h % 1) + 1) % 1;
-  const i = Math.floor(h * 6), f = h * 6 - i;
-  const p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s);
-  const m = [[v,t,p],[q,v,p],[p,v,t],[p,q,v],[t,p,v],[v,p,q]][i % 6];
-  return [(m[0] * 255) | 0, (m[1] * 255) | 0, (m[2] * 255) | 0];
-}
-
-function renderPixelFx(fx, p, n, tL, tG) {
-  const out = Array.from({ length: n }, () => [0, 0, 0]);
-  if (fx === "wash") {
-    for (let i = 0; i < n; i++)
-      out[i] = hsv(tG * (p.rate ?? .2) + (i / n) * (p.spread ?? 1), .85, .9);
-  } else if (fx === "chase") {
-    const pos = (((tL * (p.speed ?? 1) * n) % n) + n) % n;
-    for (let i = 0; i < n; i++) {
-      let d = Math.abs(i - pos); d = Math.min(d, n - d);
-      const b = Math.max(0, 1 - d * .75);
-      out[i] = hsv(p.hue ?? .55, .8, b * b);
-    }
-  } else if (fx === "strobe") {
-    const per = BEAT / (p.div ?? 2);
-    const b = Math.exp((-(tG % per) / per) * 9);
-    for (let i = 0; i < n; i++) out[i] = hsv(p.hue ?? 0, p.sat ?? 0, b);
-  } else if (fx === "pulse") {
-    const per = BEAT / (p.div ?? 1);
-    const b = Math.pow(1 - (tG % per) / per, 2.2);
-    for (let i = 0; i < n; i++) out[i] = hsv(p.hue ?? .58, .9, b);
-  }
-  return out;
-}
-
-function renderDmxFx(fx, p, tL, tG) {
-  if (fx === "sweep") return {
-    pan: Math.sin(tG * Math.PI * 2 * (p.rate ?? .25)) * (p.range ?? .6),
-    dim: .85, rgb: hsv(p.hue ?? .6, .8, 1) };
-  if (fx === "gobos") {
-    const per = BEAT / (p.div ?? 2);
-    return { gobo: 1 + (Math.floor(tG / per) % (GOBOS.length - 1)) };
-  }
-  if (fx === "gspin") return { grot: tG * (p.rate ?? .6) * Math.PI * 2 };
-  if (fx === "beam") {
-    const per = BEAT / (p.div ?? 2);
-    return { pan: 0, gobo: 0, dim: Math.exp((-(tG % per) / per) * 7),
-             rgb: hsv(p.hue ?? 0, p.sat ?? 0, 1) };
-  }
-  return {};
-}
-
-function renderFrame(d, t, master = 1) {
-  const pixels = {}, heads = {};
-  d.pix.forEach(i => { pixels[i.id] = Array.from({ length: nodesOf(i) }, () => [0, 0, 0]); });
-  d.heads.forEach(h => { heads[h.id] = { pan: 0, dim: 0, rgb: [0, 0, 0], gobo: 0, grot: 0 }; });
-
-  for (const track of TRACKS) {
-    const clip = track.clips.find(c => t >= c.t0 && t < c.t1);
-    if (!clip) continue;
-    const tL = t - clip.t0;
-
-    if (track.kind === "dmx") {
-      const hg = d.groups.find(g => g.id === track.target);
-      const ids = (hg ? hg.members : [track.target]).filter(i => heads[i]);
-      const st = renderDmxFx(clip.fx, clip.p, tL, t);
-      ids.forEach(i => {
-        const cur = heads[i];
-        const nx = { ...cur, ...st };
-        if (st.dim !== undefined) nx.dim = Math.max(cur.dim, st.dim);
-        heads[i] = nx;
-      });
-      continue;
-    }
-    const grp = d.groups.find(g => g.id === track.target);
-    const members = (grp ? grp.members : [track.target]).filter(id => pixels[id]);
-    if (!members.length) continue;
-    const total = members.reduce((s, id) => s + pixels[id].length, 0);
-    const buf = renderPixelFx(clip.fx, clip.p, total, tL, t);
-    let k = 0;
-    for (const id of members)
-      for (let i = 0; i < pixels[id].length; i++, k++) {
-        const s = buf[k], p = pixels[id][i];
-        pixels[id][i] = [
-          Math.min(255, p[0] + s[0] * master),
-          Math.min(255, p[1] + s[1] * master),
-          Math.min(255, p[2] + s[2] * master)];
-      }
-  }
-  // O perfil manda: capacidade ausente e zerada aqui, no motor.
-  d.heads.forEach(h => {
-    const caps = new Set(profOf(h).ch.map(chKey));
-    const st = heads[h.id];
-    if (!caps.has("gobo")) st.gobo = 0;
-    if (!caps.has("grot")) st.grot = 0;
-    if (!caps.has("pan")) st.pan = 0;
-    st.dim *= master;
-  });
-  return { pixels, heads };
-}
-
+import {
+  CAP, CAT, COLOR_ORDER, GOBOS, KIND, PROFILES, RIG_PADRAO, VH, VW,
+  chLb, footprint, nodesOf, sizeOf,
+} from "./modelo/rig.js";
+import { BARS, BEAT, BPM, DURATION, EFFECTS, FPS, SCENES, TRACKS } from "./modelo/sequencia.js";
+import { capsOf, derive, responders } from "./motor/derivar.js";
+import { renderFrame } from "./motor/render.js";
+import { exportarFseq } from "./motor/exportar.js";
 /* ============================================================
    PALCO — um canvas, dois modos de desenho.
    ============================================================ */
@@ -814,6 +551,15 @@ const PARAM_PT = { rate: "taxa", spread: "espalhamento", speed: "velocidade",
   hue: "matiz", sat: "saturação", div: "divisão", range: "amplitude" };
 const MODE_LB = { palco: "Palco", mesa: "Mesa", estudio: "Estúdio" };
 
+/* Único ponto do exportador que toca o DOM — o resto roda headless. */
+function baixarArquivo(bytes, nome) {
+  const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = nome;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
 /* ============================================================
    APP
    ============================================================ */
@@ -837,6 +583,8 @@ export default function App() {
   const [offset, setOffset] = useState(0);
   const [hasFile, setHasFile] = useState(false);
   const [peaks, setPeaks] = useState(null);
+  const [midia, setMidia] = useState(null);
+  const [exp, setExp] = useState(null);          // null | "indo" | texto do resultado
   const raf = useRef(0), seq = useRef(100), au = useRef(makeAudio());
 
   useEffect(() => {
@@ -912,6 +660,7 @@ export default function App() {
     A.buf = buf;
     A.peaks = peaksOf(buf);
     setHasFile(true);
+    setMidia(file.name);
     setPeaks(A.peaks);
     if (playing) startAt(loop.t0);
   }, [playing, startAt, loop.t0]);
@@ -954,6 +703,22 @@ export default function App() {
       x: VW / 2 + (count % 3) * 24, y: VH / 2 + (count % 3) * 24 }]);
     setPick(id); setView("croqui");
   }, [rig]);
+
+  /* Exporta a faixa inteira em .fseq. O master e o blackout são controle
+     ao vivo e ficam de fora — o arquivo carrega o show como foi autorado.
+     O atraso entra, porque é constante da instalação e não da execução. */
+  const exportar = useCallback(async () => {
+    setExp("indo");
+    try {
+      const bytes = await exportarFseq({ rig, tracks: TRACKS, offset,
+        midia: midia || undefined });
+      const nome = (midia ? midia.replace(/\.[^.]+$/, "") : "paredao") + ".fseq";
+      baixarArquivo(bytes, nome);
+      setExp(`${nome} · ${(bytes.length / 1024).toFixed(1)} KB`);
+    } catch (e) {
+      setExp(`falhou: ${e.message}`);
+    }
+  }, [rig, offset, midia]);
 
   const croqui = view === "croqui";
   const pickItem = rig.find(i => i.id === pick) || null;
@@ -999,7 +764,11 @@ export default function App() {
             <span className="chip chip-blue">{d.totalNodes} nodes</span>
             <span className="chip chip-amber">{d.heads.length} heads</span>
             <span className="chip">{d.totalCh} canais</span>
-            <button className="btn btn-ghost">Gravar no SD</button>
+            {exp && exp !== "indo" && <span className="chip chip-ok">{exp}</span>}
+            <button className="btn btn-ghost" onClick={exportar} disabled={exp === "indo"}
+              title={`${Math.round(DURATION * FPS)} quadros a ${FPS}fps · zlib`}>
+              {exp === "indo" ? "Exportando…" : "Exportar .fseq"}
+            </button>
           </div>)}
       </header>
 
@@ -1136,6 +905,8 @@ button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
   font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--chrome);white-space:nowrap}
 .chip-blue{color:#8FB4FF;border-color:#1D2E52;background:#0E1830}
 .chip-amber{color:#FFC97A;border-color:#3D2E14;background:#1E1608}
+.chip-ok{color:#6FD3B4;border-color:#14382E;background:#081A15}
+.btn:disabled{opacity:.5;cursor:progress}
 
 .body{flex:1;display:grid;grid-template-columns:206px 1fr 226px;min-height:0}
 .pane-t{font-family:'Archivo',sans-serif;font-size:9.5px;font-weight:700;letter-spacing:.19em;

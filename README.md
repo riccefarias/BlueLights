@@ -26,8 +26,9 @@ Dois sistemas de luz numa timeline só:
 
 ## Estado
 
-Protótipo do sequenciador funcionando em `web/`. Firmware não iniciado.
-Próximo passo que destrava tudo: **exportador `.fseq`** (ver `docs/07-roadmap.md`).
+Sequenciador funcionando em `web/`, já **exportando `.fseq` V2** — o motor roda
+headless e tem teste. Firmware não iniciado.
+Próximo passo: **firmware base do ESP32-S3** (ver `docs/07-roadmap.md`).
 
 ## Rodando o sequenciador
 
@@ -36,6 +37,22 @@ cd web
 npm install
 npm run dev
 ```
+
+```bash
+npm test        # motor e formato fseq, sem browser
+npm run build
+```
+
+## Camadas em `web/src`
+
+| Pasta | O quê |
+|---|---|
+| `modelo/` | O documento: rig, perfis, trilhas, clips. JSON serializável |
+| `motor/` | Funções puras. Render, canais, `.fseq`. Sem React, sem DOM |
+| `App.jsx` | UI. Só desenha e edita o modelo |
+
+O motor não importa React de propósito: é o que deixa exportar sem browser e
+testar sem montar tela.
 
 ## Convenções
 

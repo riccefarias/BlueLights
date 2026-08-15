@@ -11,3 +11,8 @@ Componentes previstos:
 - `store/` — SD_MMC 4-bit, gravação atômica, manifest
 - `play/`  — leitor de fseq, duplo buffer, sincronia por timecode
 - `out/`   — RMT (WS2811) e esp_dmx (UART2)
+
+O leitor de fseq tem o contrato já escrito e testado do outro lado: o layout
+está em `../docs/08-formato-fseq.md` e a implementação de referência em
+`../web/src/motor/fseq.js`. Passo de 25ms (40fps), blocos zlib de ~64KB —
+descompressão pelo zlib que já vem no ESP-IDF.
