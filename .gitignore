@@ -1,0 +1,18 @@
+node_modules/
+dist/
+build/
+.DS_Store
+*.log
+.env
+.vscode/
+.idea/
+
+# artefatos de build de firmware
+.pio/
+.pioenvs/
+managed_components/
+
+# sequências e mídia
+*.fseq
+*.mp3
+*.wav
