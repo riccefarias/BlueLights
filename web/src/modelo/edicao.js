@@ -171,6 +171,14 @@ export function removerTrilha(tracks, ti) {
   return tracks.filter((_, i) => i !== ti);
 }
 
+/** Troca o alvo de uma trilha mantendo os clips: linha e equipamento são
+    desacoplados. Efeito que o alvo novo não faz o motor já zera — mesma
+    tolerância do grupo misto. O kind acompanha o alvo, porque é o alvo
+    que decide o caminho de render. */
+export function retargetTrilha(tracks, ti, target, kind) {
+  return tracks.map((tr, i) => i === ti ? { ...tr, target, kind } : tr);
+}
+
 /** Onde está um clip, por id. */
 export function acharClip(tracks, id) {
   for (let ti = 0; ti < tracks.length; ti++) {

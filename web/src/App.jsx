@@ -12,7 +12,7 @@ import { rastrearBatidas } from "./motor/batidas.js";
 import { paraMono } from "./motor/bpm.js";
 import {
   acharClip, adicionarTrilha, ajustarKf, ajustarParam, curvarParam, inserirClip,
-  moverClip, redimensionarClip, removerClip, removerTrilha, trocarEfeito,
+  moverClip, redimensionarClip, removerClip, removerTrilha, retargetTrilha, trocarEfeito,
 } from "./modelo/edicao.js";
 import { capsOf, derive, responders } from "./motor/derivar.js";
 import { renderFrame } from "./motor/render.js";
@@ -337,7 +337,7 @@ function Stage({ rig, frame, edit, sel, onPick, onMove, chan }) {
       }
     });
 
-    if (cam.current.z > 1.01) {
+    if (Math.abs(cam.current.z - 1) > .01) {
       g.fillStyle = "rgba(143,180,255,.75)";
       g.font = "600 11px 'IBM Plex Mono',monospace";
       g.textAlign = "right";
@@ -359,17 +359,24 @@ function Stage({ rig, frame, edit, sel, onPick, onMove, chan }) {
     return { x: (e.clientX - r.left - ox) / s, y: (e.clientY - r.top - oy) / s };
   };
 
+  /* Abaixo de 1 o palco afasta (fica menor que o painel) — aí a câmera
+     trava no centro, porque pan de coisa que já coube inteira só
+     desorienta. ZMIN dá o "ver de longe" que o ultrawide pedia. */
+  const ZMIN = 0.4, ZMAX = 8;
+  const zclamp = z => Math.max(ZMIN, Math.min(ZMAX, z));
+
   /* Recentraliza a câmera pra que o ponto virtual (vx,vy) fique sob o
      ponto de tela (px,py). É a mesma conta do zoom ancorado da timeline:
      o que está sob o dedo não anda. */
   const mira = (vx, vy, px, py) => {
     const cv = ref.current;
+    if (cam.current.z <= 1.001) {          // encaixado ou afastado: centrado
+      cam.current.cx = VW / 2; cam.current.cy = VH / 2;
+      draw(); return;
+    }
     const s = Math.min(cv.clientWidth / VW, cv.clientHeight / VH) * cam.current.z;
     cam.current.cx = Math.max(0, Math.min(VW, vx - (px - cv.clientWidth / 2) / s));
     cam.current.cy = Math.max(0, Math.min(VH, vy - (py - cv.clientHeight / 2) / s));
-    if (cam.current.z <= 1.01) {           // encaixou de volta: letterbox puro
-      cam.current.z = 1; cam.current.cx = VW / 2; cam.current.cy = VH / 2;
-    }
     draw();
   };
 
@@ -394,7 +401,7 @@ function Stage({ rig, frame, edit, sel, onPick, onMove, chan }) {
     const tm = e => {
       if (!pinca || e.touches.length !== 2) return;
       e.preventDefault();
-      cam.current.z = Math.max(1, Math.min(8, pinca.z * dist(e.touches) / pinca.d));
+      cam.current.z = zclamp(pinca.z * dist(e.touches) / pinca.d);
       const m = meio(e.touches);
       mira(pinca.vx, pinca.vy, m.x, m.y);
     };
@@ -406,7 +413,7 @@ function Stage({ rig, frame, edit, sel, onPick, onMove, chan }) {
       e.preventDefault();
       const r = el.getBoundingClientRect();
       const p = toV(e);
-      cam.current.z = Math.max(1, Math.min(8, cam.current.z * (e.deltaY < 0 ? 1.18 : 1 / 1.18)));
+      cam.current.z = zclamp(cam.current.z * (e.deltaY < 0 ? 1.18 : 1 / 1.18));
       mira(p.x, p.y, e.clientX - r.left, e.clientY - r.top);
     };
     el.addEventListener("touchstart", td, { passive: true });
@@ -429,8 +436,9 @@ function Stage({ rig, frame, edit, sel, onPick, onMove, chan }) {
   /* Botões pra quem não descobre pinça/ctrl+roda: zoom em degraus no
      centro da vista atual. */
   const zoomBtn = f => () => {
-    cam.current.z = Math.max(1, Math.min(8, cam.current.z * f));
-    if (cam.current.z <= 1.01) { cam.current = { z: 1, cx: VW / 2, cy: VH / 2 }; }
+    cam.current.z = zclamp(cam.current.z * f);
+    if (Math.abs(cam.current.z - 1) < .08) cam.current.z = 1;   // detente no encaixe
+    if (cam.current.z <= 1) { cam.current.cx = VW / 2; cam.current.cy = VH / 2; }
     draw();
   };
 
@@ -650,7 +658,8 @@ function Timeline({ t, tracks, grade, sel, setSel, onOpen, scrub, compact, label
         {tracks.map((tr, ti) => (
           <div key={tr.id} className={`tl-lb ${insercao?.ti === ti ? "alvo" : ""}`}>
             <span className={`bar ${tr.kind}`} />
-            <span className="tl-lb-t">{labelFor(tr.target)}</span>
+            <button className="tl-lb-t tl-lb-b" title="Trocar o alvo desta linha"
+              onClick={() => ed.trocarAlvo(ti)}>{labelFor(tr.target)}</button>
             {!tr.clips.length && (
               <button className="tl-x" title="Remover trilha vazia"
                 onClick={() => ed.removerTrilha(ti)}>×</button>)}
@@ -1138,7 +1147,12 @@ function CroquiInsp({ item, chan, pix, manual, bytes, onCanal, onCor, onSoltar, 
   </>);
 }
 
-function RigList({ d, frame, sel, onPick }) {
+function RigList({ d, frame, sel, onPick, onAdd }) {
+  /* ⊕ = criar uma linha na timeline falando com este alvo. A linha nasce
+     vazia e cai na aba Linha pronta pra receber bloco. */
+  const mais = (id, kind, lb) => (
+    <button className="rig-add" title={`Criar linha na timeline pra ${lb}`}
+      onClick={e => { e.stopPropagation(); onAdd(id, kind); }}>⊕</button>);
   return (<>
     {d.groups.map(g => (
       <div key={g.id} className="rig-grp">
@@ -1146,27 +1160,35 @@ function RigList({ d, frame, sel, onPick }) {
           <span>{g.label}</span>
           <span className="mono dim">{g.members.reduce((s, id) =>
             s + (frame.pixels[id]?.length || 0), 0)}n</span>
+          {mais(g.id, g.id === "g-heads" ? "dmx" : "pixel", g.label)}
         </div>
         {g.id !== "g-todas" && g.members.map(id => {
           const it = d.pix.find(p => p.id === id); if (!it) return null;
           const lit = (frame.pixels[id] || []).some(c => c[0] + c[1] + c[2] > 30);
           return (
-            <button key={id} className={`rig-item ${sel === id ? "on" : ""}`} onClick={() => onPick(id)}>
+            <div key={id} className={`rig-item ${sel === id ? "on" : ""}`}
+              role="button" tabIndex={0} onClick={() => onPick(id)}
+              onKeyDown={e => e.key === "Enter" && onPick(id)}>
               <span className={`dot ${lit ? "on" : ""}`} />
               <span className="rig-lb">{it.lb}</span>
               <span className="mono dim">ch{d.chan[id]}</span>
-            </button>);
+              {mais(id, "pixel", it.lb)}
+            </div>);
         })}
       </div>))}
     <div className="rig-grp">
       <div className="rig-grp-h amber"><span>Moving heads</span>
-        <span className="mono dim">{d.heads.reduce((s, h) => s + footprint(h), 0)}ch</span></div>
+        <span className="mono dim">{d.heads.reduce((s, h) => s + footprint(h), 0)}ch</span>
+        {mais("g-heads", "dmx", "Todas as heads")}</div>
       {d.heads.map(h => (
-        <button key={h.id} className={`rig-item ${sel === h.id ? "on" : ""}`} onClick={() => onPick(h.id)}>
+        <div key={h.id} className={`rig-item ${sel === h.id ? "on" : ""}`}
+          role="button" tabIndex={0} onClick={() => onPick(h.id)}
+          onKeyDown={e => e.key === "Enter" && onPick(h.id)}>
           <span className={`dot amber ${frame.heads[h.id]?.dim > .05 ? "on" : ""}`} />
           <span className="rig-lb">{h.lb}</span>
           <span className="mono dim">ch{d.chan[h.id]}</span>
-        </button>))}
+          {mais(h.id, "dmx", h.lb)}
+        </div>))}
     </div>
   </>);
 }
@@ -1618,6 +1640,7 @@ export default function App() {
     },
     removerTrilha: (ti) => { marcar(); setTracks(ts => removerTrilha(ts, ti)); },
     pedirTrilha: () => setNovaTrilha(true),
+    trocarAlvo: ti => setNovaTrilha({ ti }),
     batida: (i, t) => setGrade(g => moverBatida(g, i, t)),
   }), [marcar, insercao, tracks, selClip, grade]);
 
@@ -1628,19 +1651,25 @@ export default function App() {
     ...d.pix.map((i, j) => ({ id: i.id, lb: `#${j + 1} · ${i.lb}`, kind: "pixel", sec: "Farol / fita, um por um" })),
   ], [d]);
 
+  /* O diálogo de alvos serve dois fluxos: trilha nova e trocar o alvo de
+     uma trilha que já existe (linha e equipamento são desacoplados). */
   const criarTrilha = useCallback((target, kind) => {
     marcar();
-    setTracks(ts => adicionarTrilha(ts, target, kind));
+    setTracks(ts => novaTrilha?.ti != null
+      ? retargetTrilha(ts, novaTrilha.ti, target, kind)
+      : adicionarTrilha(ts, target, kind));
     setNovaTrilha(false);
-  }, [marcar]);
+  }, [marcar, novaTrilha]);
 
-  /* Atalho do croqui: trilha da fixture selecionada, já caindo na Linha
-     pra inserir o bloco — sem caçar o alvo na lista do "+ trilha". */
-  const trilhaDaFixture = useCallback((it) => {
-    criarTrilha(it.id, KIND[it.k].pixel ? "pixel" : "dmx");
+  /* Atalho do croqui e do painel Rig: cria a linha e já cai na Linha pra
+     inserir o bloco — sem caçar o alvo na lista do "+ trilha". */
+  const adicionarNaLinha = useCallback((id, kind) => {
+    criarTrilha(id, kind);
     setSheet(false);                 // o toque que selecionou no croqui deixa
     setTab("linha"); setView("show");//  um sheet suprimido; não pode vazar aqui
   }, [criarTrilha]);
+  const trilhaDaFixture = useCallback((it) =>
+    adicionarNaLinha(it.id, KIND[it.k].pixel ? "pixel" : "dmx"), [adicionarNaLinha]);
 
   /* Mesa → timeline: congela o que está nos sliders num bloco de pose,
      no playhead, na trilha da cabeça (criando a trilha se não houver).
@@ -1879,7 +1908,7 @@ export default function App() {
         <div className="body">
           <aside className="rig">
             <div className="pane-t">Rig</div>
-            <RigList d={d} frame={frameFinal} sel={pick} onPick={id => { setPick(id); setView("croqui"); }} />
+            <RigList d={d} frame={frameFinal} sel={pick} onAdd={adicionarNaLinha} onPick={id => { setPick(id); setView("croqui"); }} />
           </aside>
           <main className="pv">
             <div className="pv-head">
@@ -1905,7 +1934,11 @@ export default function App() {
       {novaTrilha && (<>
         <div className="scrim" onClick={() => setNovaTrilha(false)} />
         <div className="alvos" role="dialog" aria-label="Nova trilha">
-          <div className="sec">Trilha nova pra qual alvo</div>
+          <div className="sec">
+            {novaTrilha?.ti != null
+              ? `Linha de "${labelFor(tracks[novaTrilha.ti]?.target)}" passa a falar com…`
+              : "Trilha nova pra qual alvo"}
+          </div>
           {alvos.map((a, i) => (<React.Fragment key={a.id}>
             {a.sec !== alvos[i - 1]?.sec && <div className="alvo-sec">{a.sec}</div>}
             <button className="alvo" onClick={() => criarTrilha(a.id, a.kind)}>
@@ -1981,7 +2014,7 @@ export default function App() {
             </div>)}
           {tab === "rig" && (
             <div className="m-rig">
-              <RigList d={d} frame={frameFinal} sel={pick}
+              <RigList d={d} frame={frameFinal} sel={pick} onAdd={adicionarNaLinha}
                 onPick={id => { setPick(id); setTab("croqui"); setView("croqui"); }} />
             </div>)}
         </div>
@@ -2003,6 +2036,13 @@ export default function App() {
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@500;700&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+*{scrollbar-width:thin;scrollbar-color:#22304A transparent}
+*::-webkit-scrollbar{width:9px;height:9px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:#22304A;border-radius:6px;
+  border:2px solid transparent;background-clip:padding-box}
+*::-webkit-scrollbar-thumb:hover{background:#2E415F}
+*::-webkit-scrollbar-corner{background:transparent}
 .app{--void:#070A12;--panel:#0E1420;--line:#1C2534;--line2:#141C29;
   --ink:#E8EEF7;--chrome:#7D8AA0;--blue:#2B6BFF;--amber:#FFA023;--hot:#FF3B6B;
   position:absolute;inset:0;display:flex;flex-direction:column;background:var(--void);
@@ -2054,15 +2094,18 @@ button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .rig-grp-h{display:flex;justify-content:space-between;padding:6px 13px;font-size:11px;font-weight:600;
   color:#B7C4D8;border-left:2px solid var(--blue);background:#0B111C}
 .rig-grp-h.amber{border-left-color:var(--amber)}
-.rig-item{display:flex;align-items:center;gap:8px;padding:7px 13px 7px 22px;font-size:11.5px;width:100%;text-align:left}
+.rig-item{display:flex;align-items:center;gap:8px;padding:7px 13px 7px 22px;font-size:11.5px;width:100%;text-align:left;cursor:pointer}
 .rig-item:hover{background:#111A28}
 .rig-item.on{background:#122140}
+.rig-add{margin-left:6px;width:22px;height:22px;flex:0 0 22px;border-radius:6px;
+  border:1px solid var(--line);background:#0D1420;color:#6FD3B4;font-size:13px;line-height:1}
+.rig-add:hover{background:#0F241F;border-color:#6FD3B4}
 .rig-lb{flex:1;color:#9FADC2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dot{width:6px;height:6px;border-radius:50%;background:#26324a;flex:0 0 auto;transition:.08s}
 .dot.on{background:var(--blue);box-shadow:0 0 9px var(--blue)}
 .dot.amber.on{background:var(--amber);box-shadow:0 0 9px var(--amber)}
 
-.pv{display:flex;flex-direction:column;min-width:0;background:#05070D}
+.pv{display:flex;flex-direction:column;min-width:0;min-height:0;background:#05070D}
 .pv-head{display:flex;align-items:center;justify-content:space-between;padding:8px 14px 8px 10px;
   border-bottom:1px solid var(--line2);gap:10px}
 .pv-head .mono{font-size:10px}
@@ -2070,7 +2113,7 @@ button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .seg-b{padding:5px 11px;border-radius:6px;font-size:11px;font-weight:600;color:var(--chrome)}
 .seg-b.on{background:#1B2942;color:var(--ink)}
 .stage-w{flex:1;position:relative;display:flex;min-height:0}
-.stage{flex:1;width:100%;display:block;min-height:0;touch-action:none}
+.stage{flex:1;width:100%;height:100%;display:block;min-height:0;touch-action:none}
 .zoomctl{position:absolute;right:10px;bottom:10px;display:flex;gap:6px}
 .zoomctl button{width:36px;height:36px;border-radius:9px;background:rgba(13,20,32,.88);
   border:1px solid var(--line);color:#8FB4FF;font-size:17px;line-height:1}
@@ -2134,14 +2177,18 @@ button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .del:hover{background:#1E0D14}
 
 .tl{flex:0 0 250px;display:grid;grid-template-columns:206px 1fr;border-top:1px solid var(--line);
-  background:var(--panel);min-height:0;position:relative}
+  background:var(--panel);min-height:0;position:relative;overflow-y:auto}
 .tl-c{flex:1;grid-template-columns:112px 1fr;border-top:none}
-.tl-gut{border-right:1px solid var(--line);overflow:hidden}
+.tl-gut{border-right:1px solid var(--line)}
 .tl-sp{height:26px;display:flex;align-items:center;padding:0 13px;font-size:9.5px;letter-spacing:.14em;
-  text-transform:uppercase;color:var(--chrome);border-bottom:1px solid var(--line2)}
+  text-transform:uppercase;color:var(--chrome);border-bottom:1px solid var(--line2);
+  position:sticky;top:0;background:var(--panel);z-index:2}
 .tl-lb{height:27px;display:flex;align-items:center;gap:7px;padding:0 10px;font-size:11px;
   color:#9FADC2;border-bottom:1px solid var(--line2)}
 .tl-lb-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl-lb-b{flex:1;min-width:0;text-align:left;padding:0;color:inherit;font:inherit;
+  background:none;border:none;cursor:pointer}
+.tl-lb-b:hover{color:var(--ink);text-decoration:underline dotted}
 .bar{width:2px;height:13px;border-radius:2px;background:var(--blue);flex:0 0 auto}
 .bar.dmx{background:var(--amber)}
 .tl-scroll{position:relative;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;

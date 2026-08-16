@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {
   DIV_ENCAIXE, acharClip, adicionarTrilha, ajustarParam, encaixa, folgaEm,
   inserirClip, moverClip, proximoId, redimensionarClip, removerClip, removerTrilha,
-  trocarEfeito,
+  retargetTrilha, trocarEfeito,
 } from "../src/modelo/edicao.js";
 import { BEAT, DURATION, EFFECTS, gradePadrao } from "../src/modelo/sequencia.js";
 
@@ -163,4 +163,16 @@ test("achar clip diz em que trilha ele está", () => {
   assert.equal(acharClip(tracks, "c2").ti, 0);
   assert.equal(acharClip(tracks, "c2").clip.fx, "chase");
   assert.equal(acharClip(tracks, "nada"), null);
+});
+
+test("retarget desacopla linha de equipamento: troca alvo e kind, clips ficam", () => {
+  const tracks = adicionarTrilha(base(), "g-sup", "pixel");
+  const ti = tracks.length - 1;
+  const com = inserirClip(tracks, ti, "cor", BEAT * 4, G);
+  const re = retargetTrilha(com, ti, "h2", "dmx");
+  assert.equal(re[ti].target, "h2");
+  assert.equal(re[ti].kind, "dmx");
+  assert.equal(re[ti].clips.length, 1);          // o bloco sobreviveu à troca
+  assert.equal(re[ti].id, com[ti].id);           // é a mesma linha
+  assert.equal(re[0].target, com[0].target);     // vizinhas intactas
 });
