@@ -502,6 +502,7 @@ function Timeline({ t, tracks, grade, sel, setSel, onOpen, scrub, compact, label
   const pct = v => `${(v / grade.duracao) * 100}%`;
   const drag = useRef(null);
   const sc = useRef(null);
+  const gut = useRef(null);        // calha de rótulos, rola em espelho do corpo
   /* Nasce no meio do curso (1×..16× em escala geométrica → 4×): sobra zoom
      pros dois lados e os blocos já carregam num tamanho legível. */
   const [zoom, setZoom] = useState(4);
@@ -653,7 +654,7 @@ function Timeline({ t, tracks, grade, sel, setSel, onOpen, scrub, compact, label
 
   return (
     <section className={`tl ${compact ? "tl-c" : ""}`}>
-      <div className="tl-gut">
+      <div className="tl-gut" ref={gut}>
         <div className="tl-sp mono">compasso</div>
         {tracks.map((tr, ti) => (
           <div key={tr.id} className={`tl-lb ${insercao?.ti === ti ? "alvo" : ""}`}>
@@ -674,7 +675,8 @@ function Timeline({ t, tracks, grade, sel, setSel, onOpen, scrub, compact, label
         <button onClick={() => zoomAt(zr.current * 1.5, (sc.current?.clientWidth || 0) / 2)}
           aria-label="Mais zoom">+</button>
       </div>
-      <div className="tl-scroll" ref={sc}>
+      <div className="tl-scroll" ref={sc}
+        onScroll={e => { if (gut.current) gut.current.scrollTop = e.currentTarget.scrollTop; }}>
        <div className="tl-in" style={{ width: `${zoom * 100}%` }}>
         <div className="tl-ruler" onPointerDown={scrubDown} onPointerMove={scrubMove}>
           {peaks && (
@@ -701,6 +703,9 @@ function Timeline({ t, tracks, grade, sel, setSel, onOpen, scrub, compact, label
               onPointerCancel={soltarBatida} />))}
         </div>
         <div className="tl-rows">
+          {/* rodapé espelho do "+ trilha" da calha: os dois lados precisam
+              ter o MESMO conteúdo de altura, senão o scroll espelhado
+              desalinha rótulo de linha perto do fim */}
           {tracks.map((tr, ti) => (
             <div key={tr.id} className="tl-row"
               onPointerDown={e => linhaDown(e, ti)} onPointerUp={e => linhaUp(e, ti)}>
@@ -720,6 +725,7 @@ function Timeline({ t, tracks, grade, sel, setSel, onOpen, scrub, compact, label
                     onPointerDown={e => pegar(e, ti, c, "fim")} />
                 </div>))}
             </div>))}
+          <div className="tl-rodape" />
         </div>
         <div className="ph" style={{ left: pct(t) }}><span className="ph-hd" /></div>
        </div>
@@ -2177,9 +2183,9 @@ button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .del:hover{background:#1E0D14}
 
 .tl{flex:0 0 250px;display:grid;grid-template-columns:206px 1fr;border-top:1px solid var(--line);
-  background:var(--panel);min-height:0;position:relative;overflow-y:auto}
+  background:var(--panel);min-height:0;position:relative}
 .tl-c{flex:1;grid-template-columns:112px 1fr;border-top:none}
-.tl-gut{border-right:1px solid var(--line)}
+.tl-gut{border-right:1px solid var(--line);overflow:hidden;padding-bottom:12px}
 .tl-sp{height:26px;display:flex;align-items:center;padding:0 13px;font-size:9.5px;letter-spacing:.14em;
   text-transform:uppercase;color:var(--chrome);border-bottom:1px solid var(--line2);
   position:sticky;top:0;background:var(--panel);z-index:2}
@@ -2191,16 +2197,16 @@ button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .tl-lb-b:hover{color:var(--ink);text-decoration:underline dotted}
 .bar{width:2px;height:13px;border-radius:2px;background:var(--blue);flex:0 0 auto}
 .bar.dmx{background:var(--amber)}
-.tl-scroll{position:relative;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;
+.tl-scroll{position:relative;overflow:auto;overscroll-behavior:contain;
   scrollbar-width:thin}
-.tl-in{position:relative;height:100%;min-width:100%}
+.tl-in{position:relative;min-height:100%;min-width:100%;display:flex;flex-direction:column}
 .tl-zoom{position:absolute;top:2px;right:8px;z-index:4;display:flex;align-items:center;gap:2px;
   padding:0 2px;background:rgba(11,17,28,.88);border:1px solid var(--line2);border-radius:6px}
 .tl-zoom button{width:24px;height:19px;font-size:13px;line-height:1;color:#9FADC2;border-radius:4px}
 .tl-zoom button:hover{background:#152136;color:#fff}
 .tl-zoom .mono{font-size:9.5px;color:#54637C;min-width:24px;text-align:center}
-.tl-ruler{position:relative;height:26px;border-bottom:1px solid var(--line2);cursor:ew-resize;background:#0B111C;
-  touch-action:none}
+.tl-ruler{position:sticky;top:0;z-index:3;flex:0 0 26px;height:26px;border-bottom:1px solid var(--line2);
+  cursor:ew-resize;background:#0B111C;touch-action:none}
 .tl-bar{position:absolute;top:0;height:100%;border-left:1px solid #223049;display:flex;align-items:center;padding-left:5px}
 .tl-bar .mono{font-size:9.5px;color:#54637C}
 .tl-beat{position:absolute;top:16px;bottom:0;width:1px;background:#18222F}
@@ -2233,6 +2239,8 @@ button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .tl-add{display:block;width:100%;padding:7px 10px;text-align:left;font-size:10.5px;
   font-weight:600;color:var(--chrome);border-top:1px solid var(--line2)}
 .tl-add:hover{background:#111A28;color:#8FB4FF}
+.tl-rodape{height:30px}
+
 .btn-sm{min-width:30px;height:30px;font-size:13px}
 .alvos{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:7;
   width:min(320px,90vw);max-height:70%;overflow-y:auto;background:var(--panel);
@@ -2251,7 +2259,7 @@ button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .hint-avi{background:#1B0D12;border-color:#4A1A28;color:#FF9CB4}
 .clip.sel{border-color:var(--fx);background:color-mix(in srgb,var(--fx) 32%,#0E1420)}
 .clip.sel span{color:#fff}
-.ph{position:absolute;top:0;bottom:0;width:1px;background:var(--hot);pointer-events:none;
+.ph{position:absolute;top:0;bottom:0;width:1px;background:var(--hot);pointer-events:none;z-index:4;
   box-shadow:0 0 9px rgba(255,59,107,.8)}
 .ph-hd{position:absolute;top:0;left:-4px;width:9px;height:9px;border-radius:2px;background:var(--hot);transform:rotate(45deg)}
 
