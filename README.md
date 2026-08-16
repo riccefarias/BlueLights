@@ -9,27 +9,44 @@ Dois sistemas de luz numa timeline só:
 
 ## Partes
 
+Três peças nossas, cada uma com um trabalho:
+
+| Peça | Onde | O quê |
+|---|---|---|
+| Sequenciador | `web/` | Browser-based (React). Autoria, croqui do rig, preview, export `.fseq` |
+| APK da mídia | repositório à parte | Toca a música e comanda a timeline. É o relógio master |
+| Firmware | `firmware/` | LilyGO T-CAN485. Recebe upload, grava no SD, toca, converte quadro em luz |
+
 | Pasta | O quê |
 |---|---|
-| `web/` | Sequenciador browser-based (React). Autoria, croqui do rig, preview, export `.fseq` |
-| `firmware/` | ESP32-S3: recebe upload por USB, grava no SD, toca localmente, saída pixel + DMX |
 | `docs/` | Arquitetura, hardware, protocolos |
 | `docs/adr/` | Decisões e o porquê — inclusive o que foi descartado |
 
 ## Cadeia
 
 ```
-[ mídia Android ] --USB serial--> [ ESP32-S3 ] --+--> 74AHCT125 --> GX16 --> faróis WS2811
-      timecode                     lê do SD      |
-                                                 +--> ADM2582E (RS485 isolado) --> XLR --> heads
+[ APK Android ] --USB serial--> [ LilyGO T-CAN485 ] --+--> 74AHCT125 --> GX16 --> faróis WS2811
+  toca a música                  ESP32 + RS485 + SD   |
+  manda timecode                 lê do SD e toca      +--> RS485 --> XLR --> moving heads
 ```
+
+**O APK manda no tempo, a placa manda na luz.** O APK toca o áudio e manda
+timecode; o T-CAN485 lê o `.fseq` do próprio cartão e toca do relógio dele,
+usando o timecode só pra corrigir deriva.
+
+O desacoplamento é de propósito: a central Android pode reiniciar no meio do
+festcar que a luz continua. Ver `docs/03-protocolo-serial.md`.
 
 ## Estado
 
 Sequenciador funcionando em `web/`, já **exportando `.fseq` V2** e **salvando o
 setup em arquivo** — o motor roda headless e tem teste. Firmware não iniciado.
 Próximo passo: **cadastro de fixture com faixas rotuladas**, e depois o
-firmware base do ESP32-S3 (ver `docs/07-roadmap.md`).
+firmware base (ver `docs/07-roadmap.md`).
+
+Hardware definido no [ADR 0010](docs/adr/0010-lilygo-t-can485-na-saida.md):
+LilyGO T-CAN485. Ponto aberto que importa: o RS485 da placa **não é isolado**
+— ver as consequências lá.
 
 ## Rodando o sequenciador
 

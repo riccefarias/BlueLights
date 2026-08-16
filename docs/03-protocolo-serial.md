@@ -3,15 +3,20 @@
 ## Arquitetura
 
 ```
-upload  : Android --USB serial--> ESP32 --> grava no cartão SD
-playback: ESP32 lê do SD e toca local
-sync    : Android manda timecode ~2x/s; ESP ajusta o playhead
+upload  : APK Android --USB serial--> T-CAN485 --> grava no cartão SD
+playback: T-CAN485 lê do SD e toca local
+sync    : APK manda timecode ~2x/s; a placa ajusta o playhead
 ```
+
+As duas pontas são nossas: o APK da mídia e o firmware. O protocolo é
+contrato interno, não integração com coisa de terceiro.
 
 Upload é evento raro e pode ser lento. Reprodução é crítica e fica local.
 As duas coisas desacopladas: nenhum problema de uma contamina a outra.
 
 **Consequência boa:** central Android reinicia no meio do festcar e a luz continua.
+
+É o motivo de o `.fseq` morar no cartão da placa e não ser streamado pelo APK.
 
 ## Por que USB e não wifi
 
@@ -30,8 +35,9 @@ bloco, gerando stalls de centenas de ms sem aviso. Bloquear upload com transport
 ## Upload
 
 - Chunks de 4–8KB com tamanho no header e ACK por chunk
-- **CRC por chunk.** Com ponte CH340 a UART não tem detecção de erro nenhuma.
-  Com USB nativo do S3 a própria camada USB já tem CRC e retry
+- **CRC por chunk, obrigatório.** A T-CAN485 fala por ponte CH9102, e ponte
+  serial não tem detecção de erro nenhuma. Com USB nativo daria pra confiar no
+  CRC da própria camada USB — não é o caso aqui (ver ADR 0010)
 - **Resume**: morreu em 4,5MB de 5MB, retoma dali
 - Grava em `faixa07.fseq.tmp` → valida CRC do arquivo inteiro → renomeia
 
@@ -56,7 +62,8 @@ Carro apagado no meio do evento porque a central bootou é o que ninguém perdoa
 ## Cartão
 
 - **High endurance / industrial.** Painel de carro em janeiro passa de 70°C
-- **SD_MMC 4-bit** em vez de SPI (no S3 os pinos são roteáveis pela matriz)
+- **SPI**, que é como a T-CAN485 liga o slot (IO15/IO02/IO14/IO13). Mais lento
+  que SD_MMC 4-bit e irrelevante aqui: ~36 kB/s de show contra ~1 MB/s de SPI
 - FAT não tem journal: corte de energia escrevendo pode levar a tabela.
   A mídia é a cópia mestra, então o pior caso é reformatar e ressincronizar
 - Slot com trava, e cola no cartão
@@ -65,8 +72,12 @@ Carro apagado no meio do evento porque a central bootou é o que ninguém perdoa
 
 | Caminho | Throughput | 5MB |
 |---|---|---|
-| CH340 @ 921600 | ~90 kB/s | ~60s |
-| S3 USB nativo | ~700 kB/s | ~7s |
+| **CH9102 @ 921600** (o nosso) | ~90 kB/s | ~60s |
+| S3 USB nativo (descartado) | ~700 kB/s | ~7s |
+
+Um minuto por faixa é aceitável porque upload é evento raro e acontece na
+garagem. O que não podia degradar era o playback — e esse é local, lido do
+cartão, sem passar pela serial.
 
 ## Compressão
 
@@ -91,8 +102,8 @@ declarar no manifest:
   android:resource="@xml/device_filter"/>
 ```
 
-Com `device_filter.xml` batendo o VID/PID do S3, o Android concede permissão automático
-e abre o app quando plugar.
+Com `device_filter.xml` batendo o VID/PID da ponte — **1a86:55d4** (WCH CH9102)
+— o Android concede permissão automático e abre o app quando plugar.
 
 ⚠️ Confirmar que a porta USB da central é host/OTG de verdade — em central chinesa
 é comum ter porta só de alimentação.

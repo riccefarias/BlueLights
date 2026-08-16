@@ -26,10 +26,10 @@ preencher o mesmo lugar.
 
 O gargalo é o cadastro, não o código.
 
-### 2. Firmware base do ESP32-S3
+### 2. Firmware base da T-CAN485
 
 - USB CDC, protocolo de upload com chunk + CRC + resume
-- SD_MMC, gravação atômica com `.tmp` + rename, manifest
+- SD por SPI, gravação atômica com `.tmp` + rename, manifest
 - RMT pra pixel, `esp_dmx` na UART2
 - Animação de fallback quando a serial cala
 
@@ -39,7 +39,8 @@ já vem no ESP-IDF.
 
 ### 3. Player no APK da mídia
 
-Leitor de fseq, transporte, timecode pela serial.
+APK nosso, em repositório à parte. Toca a música e é o relógio master:
+transporte e timecode pela serial. As duas pontas do protocolo são nossas.
 
 ### 4. WebSerial no sequenciador
 
@@ -74,6 +75,11 @@ Animar qualquer parâmetro ao longo do clip.
   cobrir a aba morrendo no celular no meio de uma edição. Ver ADR 0009
 - **zstd**, se um dia um arquivo de fora exigir
 
+## Sobrou de graça
+
+A T-CAN485 traz um barramento **CAN** que ninguém pediu. Não usar agora, mas é
+a porta pra luz reagir a RPM, porta aberta ou farol alto um dia.
+
 ## Trocas pra quando crescer
 
 Nenhuma importa nos ~18 nodes atuais:
@@ -90,3 +96,6 @@ Nenhuma importa nos ~18 nodes atuais:
       (3 × 60–150W além dos 3 SD3000)
 - [ ] Confirmar que a porta USB da central é host/OTG
 - [ ] Levantar a tabela DMX de cada uma das 3 heads
+- [ ] **Decidir a isolação do DMX** — a T-CAN485 não isola. Módulo ADM2582E
+      por fora ou terra único bem feito? Ver ADR 0010
+- [ ] Confirmar flash e PSRAM da unidade que chegou (o ADR assume sem PSRAM)

@@ -2,11 +2,44 @@
 
 ## Controlador
 
-**ESP32-S3 DevKitC-1 N16R8** — USB nativo (CDC-ACM, sem ponte serial), 16MB flash, 8MB PSRAM.
-Soldado direto, sem barra de pino. Montado no rack, nunca dentro da câmara da caixa.
+**LilyGO T-CAN485** — ESP32 clássico, ponte serial CH9102, RS485 e slot de TF
+já na placa. Montado no rack, nunca dentro da câmara da caixa.
+Decisão e o que se perdeu em troca: [ADR 0010](adr/0010-lilygo-t-can485-na-saida.md).
 
 > Vibração não mata o MCU, mata conector. Barra de pino, DuPont, socket de SD e USB
 > são o que quebra. O chip aguenta — ECU vive em cima de motor.
+
+Foi exatamente isso que decidiu a placa: borne a parafuso e periférico já
+montado ganham da arquitetura melhor soldada à mão.
+
+### Pinagem
+
+```
+RS485_TX  IO22     SD_MOSI  IO15     CAN_RX  IO26
+RS485_RX  IO21     SD_MISO  IO02     CAN_TX  IO27
+RS485_EN  IO17     SD_SCLK  IO14     CAN_SE  IO23
+RS485_SE  IO19     SD_CS    IO13     WS2812  IO04  (LED de status da placa)
+```
+
+Livres no header, pra saída de pixel:
+
+```
+IO25  IO32  IO33  IO05  IO12  IO18     <- saída
+IO34  IO35                             <- SÓ ENTRADA no ESP32 clássico
+```
+
+Seis de saída pra quatro necessárias. ⚠️ **IO12 é strapping pin** (MTDI):
+alto no boot muda a tensão de flash e a placa não sobe. Deixar por último.
+
+### O que a placa não resolve
+
+- **Sem PSRAM.** O buffer de playback vive na RAM interna: dá pros ~200ms de
+  lookahead do duplo buffer, não pra segurar a faixa inteira sem cartão
+- **SD em SPI**, não SD_MMC 4-bit. Não é gargalo: 300 pixels × 3 bytes × 40fps
+  são ~36 kB/s contra ~1 MB/s de SPI. E o `.fseq` ainda vai comprimido
+- **Upload ~8× mais lento** que USB nativo — ver a tabela em
+  `03-protocolo-serial.md`. Upload é evento raro; playback é que é crítico, e
+  esse é local
 
 ## Alimentação (12V automotivo)
 
@@ -18,8 +51,13 @@ Soldado direto, sem barra de pino. Montado no rack, nunca dentro da câmara da c
 | Eletrolítico 220µF low-ESR | Bulk na entrada |
 | Fusível 2A | Entrada do módulo |
 
-O ESP é alimentado pelo pino 5V, **nunca pelo VBUS da USB** — a central Android corta
-a USB em standby e o ESP rebootaria no meio da faixa. Cabo USB com VBUS cortado, só dado.
+⚠️ **A entrada da placa é 5–12V.** Carro em carga fica em 13,8–14,4V — já fora
+de spec antes de qualquer load dump. O buck entrega **5V** na placa; os 12V
+brutos não encostam nela.
+
+A placa é alimentada pelo borne DC, **nunca pelo VBUS da USB** — a central Android
+corta a USB em standby e o ESP rebootaria no meio da faixa. Cabo USB com VBUS
+cortado, só dado.
 
 **Fusível em cada derivação de 12V.** Fio de LED sem proteção roçando em lataria é incêndio.
 
@@ -55,20 +93,33 @@ A pinagem do GX16 já reserva o par — troca só as pontas.
 
 | Item | Obs |
 |---|---|
-| ADM2582E | Transceiver + isolação + DC-DC num CI só |
+| RS485 da própria T-CAN485 | Transceiver comum, **sem isolação** |
 | XLR3 **fêmea** de painel | DMX é invertido em relação a áudio: quem envia é fêmea |
 | Resistor 120Ω | Terminador na última head |
 
-DMX é unidirecional (sem RDM): `DE` e `RE` amarrados em VCC, sempre transmitindo.
-Não usar circuito de autodireção — o BREAK de 88µs pode ser lido como linha ociosa
-e o driver solta o barramento no meio do pacote.
+DMX é unidirecional (sem RDM): `RS485_EN` e `RS485_SE` fixados em transmissão
+por software, no boot. Não usar circuito de autodireção — o BREAK de 88µs pode
+ser lido como linha ociosa e o driver solta o barramento no meio do pacote.
+
+### ⚠️ A isolação que ficou faltando
 
 **Isolação não é opcional.** Com 3 SD3000 puxando, o terra do rack e o das heads
-não estão no mesmo potencial.
+não estão no mesmo potencial. O transceiver da placa não isola.
 
-### Config da UART no ESP32
+O [ADR 0010](adr/0010-lilygo-t-can485-na-saida.md) aceitou isso conscientemente,
+com duas saídas:
 
-DMX512 = 250000 baud, 8N2, BREAK de 88µs. Usar `esp_dmx` na UART2.
+1. **Módulo ADM2582E por fora**, entre a placa e o XLR. Recupera a proteção
+2. **Terra único bem feito**, malha aterrada só na ponta do rack
+
+Começar por (2) pra subir rápido, com (1) já comprado. **Sintoma de que
+precisa:** head travando ou fazendo movimento aleatório em cima dos graves —
+mesmo padrão do pixel logo acima.
+
+### Config da UART
+
+DMX512 = 250000 baud, 8N2, BREAK de 88µs. Usar `esp_dmx` na UART2, apontada
+pros pinos de RS485 da placa (TX IO22, RX IO21) pela matriz de GPIO.
 
 ## Conector das caixas — GX16-7
 
