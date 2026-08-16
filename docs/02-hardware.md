@@ -81,8 +81,8 @@ pra 800kHz.
 - **Par trançado DATA + GND.** Maior ganho do projeto e é de graça
 - Malha aterrada **só na ponta do rack** (nos dois lados vira laço de terra)
 - Cabo de dado longe do cabo de falante; se cruzar, a 90°
-- Se os strobos aceitarem **modo 400kHz**, usar. Dobra a margem de timing e com
-  pixel-count baixo não se perde nada
+- ✅ **Os strobos aceitam 400kHz** — medido na bancada com 4 faróis. Está em uso
+  (`NEO_KHZ400`): dobra a margem de timing e com pixel-count baixo não se perde nada
 
 ### Sintoma de que precisa retrofitar pra diferencial
 
@@ -158,7 +158,9 @@ não usar gênero, porque pino macho exposto com 12V perto de lataria é risco.
 | Dimensões | 28×79×17mm, 28g |
 | Vedação | **Não é à prova d'água** |
 
-**Em aberto:** cada farol é 1 endereço ou 3? Ver `docs/05-perfis-de-fixture.md`.
+**Resolvido na bancada:** cada farol é **1 endereço** (3 canais) — as 3 lentes
+são o mesmo pixel e acendem sempre juntas. Ordem de cor do chip: **BGR**.
+Medição e método em `docs/05-perfis-de-fixture.md`.
 
 Cuidados: condensação dentro da câmara (passar verniz nos contatos) e evitar cena
 longa de branco cheio — 3 faróis × 6W numa câmara selada sem ventilação.

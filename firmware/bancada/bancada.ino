@@ -46,15 +46,23 @@
 #define DMX_PACKET_SIZE 513
 #endif
 
-/* Descomenta se a placa for a TTGO T4 v1.3 (display + SD). Nela os
+/* Comenta se a placa NÃO for a TTGO T4 v1.3 (display + SD). Nela os
    pinos padrão não servem: GPIO4 é o backlight do TFT, GPIO2 é o MISO
-   do SD e GPIO16/17 pertencem à PSRAM de 8MB. O pixel sai no GPIO21,
-   que é o pino SDA do conector branco de 5 vias (GND 5V SDA SCL 3V3) —
-   farol liga ali sem solda: 5V, GND e dado no mesmo conector. */
-// #define BANCADA_T4
+   do SD e GPIO16/17 pertencem à PSRAM. O pixel sai no GPIO21, que é o
+   pino SDA do conector branco de 5 vias (GND 5V SDA SCL 3V3) — farol
+   liga ali sem solda: dado, 5V e GND no mesmo conector.
+
+   Conferido na placa (ESP32-D0WDQ6-V3, flash 4MB): a PSRAM existe e
+   dá 4MB — não 8MB, que aliás o ESP32 clássico nem endereça. O que
+   importa não muda: GPIO16/17 estão ocupados por ela. */
+#define BANCADA_T4
+
+#if defined(BANCADA_T4) && !defined(ESP32)
+#error "BANCADA_T4 e so da TTGO T4 (ESP32). Pra gravar no NodeMCU, comente o #define BANCADA_T4 acima."
+#endif
 
 #if defined(BANCADA_T4)
-const int PIN_LED = 4;             // backlight do TFT vira o LED de status
+const int PIN_LED = 4;             // backlight do TFT (ver PAINEL abaixo)
 const int PIN_PIXEL = 21;          // SDA do conector de 5 vias
 #else
 const int PIN_LED = 2;             // no NodeMCU é o LED da placa (aceso em LOW)
@@ -73,13 +81,27 @@ const dmx_port_t DMX = DMX_NUM_1;
 /* Quantos nodes tem no cabo AGORA (1 farol de 3 nodes = 3). No app,
    deixa a ordem de cor da fixture em RGB e ajusta a ordem AQUI — senão
    os dois lados reordenam e o teste mente. */
-const int NODES = 3;               // ocupa os canais 1..NODES*3 do mapa
-Adafruit_NeoPixel fita(NODES, PIN_PIXEL, NEO_GRB + NEO_KHZ800);
+/* Medido: cada farol AJK é UM node (as 3 lentes são o mesmo pixel), então
+   NODES conta FARÓIS. Ocupa os canais 1..NODES*3 do mapa. Node a mais que
+   o cabo tem é só ignorado — sobra não quebra nada. */
+const int NODES = 4;
+
+/* NEO_BGR medido no farol AJK, não chutado: mandando um byte de cada vez
+   pelo fio, o 1º acendeu azul, o 2º verde e o 3º vermelho. */
+Adafruit_NeoPixel fita(NODES, PIN_PIXEL, NEO_BGR + NEO_KHZ400);
+
+/* Com a serial calada, anima local em vez de congelar o último quadro:
+   é a mesma regra do firmware do show ("nunca carro apagado", ver
+   ../README.md) e serve pra conferir fiação de WS2811 sem PC nenhum. */
+const bool DEMO_SEM_SINAL = true;
+
+#include "painel_t4.h"             // só compila algo se BANCADA_T4
 
 /* quadro[0] é o start code (0). O resto, canais 1..512. */
 uint8_t quadro[DMX_PACKET_SIZE] = { 0 };
 int tamanho = 513;                 // start code + 512 canais
 uint32_t ultimoDado = 0;
+uint32_t quadrosOk = 0;            // quantos quadros válidos já entraram
 
 void setup() {
   Serial.setRxBufferSize(2048);    // antes do begin — no ESP32 depois não vale
@@ -94,6 +116,30 @@ void setup() {
 
   fita.begin();
   fita.show();                     // tudo apagado até chegar quadro
+
+#if defined(BANCADA_T4)
+  painel::iniciar(NODES, PIN_PIXEL, PIN_TX, PIN_EN);
+#endif
+}
+
+/* Animação local pra quando o sequenciador não está mandando: um cometa
+   com matiz girando. Escreve no MESMO buffer do quadro, então tela, pixel
+   e DMX continuam mostrando a mesma coisa — e o primeiro quadro que
+   chegar pela serial sobrescreve isto naturalmente. */
+void animacaoLocal() {
+  uint32_t t = millis();
+  for (int i = 0; i < NODES; i++) {
+    uint16_t matiz = (t * 12 + i * (65536 / max(NODES, 1))) & 0xFFFF;
+    // cauda: o node "da vez" acende cheio e os outros decaem
+    int fase = (t / 90) % max(NODES, 1);
+    int dist = (i - fase + NODES) % NODES;
+    uint8_t brilho = dist == 0 ? 255 : dist == 1 ? 90 : 25;
+    uint32_t c = fita.gamma32(fita.ColorHSV(matiz, 255, brilho));
+    int o = 1 + i * 3;
+    quadro[o]     = (c >> 16) & 0xFF;
+    quadro[o + 1] = (c >> 8) & 0xFF;
+    quadro[o + 2] = c & 0xFF;
+  }
 }
 
 /* Canais 1.. viram pixels na mesma ordem do croqui: o app serializa
@@ -133,6 +179,7 @@ void leSerial() {
           memcpy(quadro, corpo, len);      // corpo[0] já é o start code
           tamanho = max(len, 25);          // DMX de verdade não gosta de quadro anão
           ultimoDado = millis();
+          quadrosOk++;
         }
         st = ESPERA;
         break;
@@ -142,6 +189,10 @@ void leSerial() {
 
 void loop() {
   leSerial();
+
+  bool vivo = millis() - ultimoDado < 2000;
+  bool demo = !vivo && DEMO_SEM_SINAL;
+  if (demo) animacaoLocal();
 
   /* Manda sempre, com ou sem dado novo: DMX é fita rolante, aparelho
      que fica 1s sem quadro entra em modo próprio. O pixel pega carona
@@ -160,11 +211,31 @@ void loop() {
   }
 #endif
 
+#if defined(BANCADA_T4)
+  /* Na T4 o backlight fica FIXO aceso e quem conta o estado é a tela —
+     backlight piscando atrás de uma UI só atrapalha a leitura.
+     Atualiza a ~15fps: metade da cadência do link, invisível pro olho e
+     deixa a CPU pro que importa (ler serial e mandar quadro). */
+  static uint32_t proximaTela = 0, marcoFps = 0;
+  static uint32_t quadrosMarco = 0;
+  static int fps = 0;
+
+  if (millis() - marcoFps >= 1000) {
+    marcoFps = millis();
+    fps = quadrosOk - quadrosMarco;
+    quadrosMarco = quadrosOk;
+  }
+  if ((int32_t)(millis() - proximaTela) >= 0) {
+    proximaTela = millis() + 66;
+    painel::atualizar(quadro, NODES, demo ? 0 : (vivo ? 2 : 1),
+                      fps, tamanho - 1, quadrosOk);
+  }
+#else
   // LED aceso = recebendo do sequenciador; piscando = segurando o último quadro
-  bool vivo = millis() - ultimoDado < 2000;
   int led = vivo ? HIGH : (millis() / 400) % 2;
 #if !defined(ESP32)
   led = !led;                      // o LED do NodeMCU acende em LOW
 #endif
   digitalWrite(PIN_LED, led);
+#endif
 }

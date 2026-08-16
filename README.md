@@ -42,7 +42,12 @@ festcar que a luz continua. Ver `docs/03-protocolo-serial.md`.
 Sequenciador funcionando em `web/`: carrega a faixa, **detecta o andamento e
 monta a grade a partir do áudio**, edita a timeline, salva o setup em arquivo e
 **exporta `.fseq` V2**. O motor roda headless e tem teste.
-Firmware não iniciado.
+
+Firmware do show (T-CAN485) não iniciado. Mas a **bancada roda**: `firmware/bancada`
+está gravada numa TTGO T4 v1.3 e acende farol de verdade a partir do sequenciador,
+com painel no display mostrando o show ao vivo. Foi ela que respondeu as três
+perguntas que estavam travando o croqui — **farol = 1 endereço**, ordem de cor
+**BGR**, **400kHz aceito**.
 Próximo passo: **value curves** e o **cadastro de fixture** (ver
 `docs/07-roadmap.md`).
 

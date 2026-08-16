@@ -76,22 +76,43 @@ Importar GDTF vale mais que qualquer editor bonito de perfil.
 
 Farol AJK: **1 node ou 3 nodes?**
 
-Evidência até aqui:
-- Foto de marketing mostra 3 cores diferentes num farol — só explicável com 3 endereços
-- Outra foto mostra os 3 emissores em roxo — mata a hipótese de LEDs discretos R, G e B fixos,
-  porque roxo é mistura
-- Fabricação aponta pro mais barato: 3 emissores RGB em paralelo num CI só
+### ✅ Resolvido: 1 node por farol
 
-### Teste definitivo, quando chegarem
+Medido na bancada (T4 v1.3, dois faróis no cabo), não deduzido:
 
-1. Manda pixel 1 = **vermelho puro**
-   - uma lente acende → 3 endereços
-   - as três acendem → 1 endereço
-2. Manda pixel 1 = **azul puro**
-   - as três acendem → 1 endereço, confirmado
-   - acende a mesma lente do teste 1 → 3 endereços
+Mandando **um byte do fio por node** — node 1 só o 1º byte, node 2 só o 2º —
+os dois faróis acenderam **cores diferentes**: o primeiro azul, o segundo
+verde. Se cada farol fosse 3 endereços, os dois primeiros bytes cairiam
+dentro do **mesmo** farol e o segundo teria ficado apagado.
 
-Não trava a compra: 6 ou 18 pixels não muda nada de arquitetura.
-No croqui é um toggle.
+As 3 lentes de um farol são **o mesmo pixel**: acendem sempre juntas, na
+mesma cor. Footprint: **3 canais por farol**.
 
-**Perguntar ao fabricante junto:** protocolo é 400 ou 800kHz?
+> A foto de marketing com 3 cores diferentes num farol, listada aqui como
+> evidência de 3 endereços, **não se sustentou** na medição — provavelmente
+> composição ou outro modelo. A hipótese de fabricação ("3 emissores RGB em
+> paralelo num CI só") era a certa.
+
+### ✅ Resolvido: ordem de cor é BGR
+
+Mesmo teste, terceiro byte: acende **vermelho**. A ordem do fio é
+**B, G, R** — no sketch da bancada, `NEO_BGR`.
+
+Cuidado que isso impõe: a fixture no app fica em **RGB**. Reordenar dos dois
+lados ao mesmo tempo é teste que mente — quem traduz é só o firmware.
+
+### ✅ Resolvido: o chip aceita 400kHz
+
+Os dois modos funcionam. As medições de ordem e endereço rodaram em
+`NEO_KHZ800`; depois, em `NEO_KHZ400`, 4 faróis seguraram cores fixas e
+distintas (azul, verde, vermelho, **rosa**) sem glitch.
+
+Ficou em **400kHz**, que é o que o `02-hardware.md` já preferia: dobra a
+margem de timing e, com pixel-count baixo, não se perde nada.
+
+> O rosa é o caso que decide. Vermelho forte **+** azul médio só sai rosa se
+> dois canais estiverem certos ao mesmo tempo — timing comendo bit derruba
+> ele pra vermelho puro ou magenta antes de estragar as cores puras.
+
+O que já não é mais risco: 6 ou 18 pixels não mudava arquitetura, e agora
+sabe-se que são 6.

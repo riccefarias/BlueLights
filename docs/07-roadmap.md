@@ -160,13 +160,14 @@ pixel por RMT (os faróis) e DMX pelo MAX485 (as cabeças, depois). O
 sequenciador ganhou o botão **DMX** (Web Serial, desktop) — show e mesa de
 canais saem no cabo sem esperar o firmware da T-CAN485.
 
-- [ ] Fonte 5V pros faróis (e 74HCT125 se o dado a 3.3V não segurar)
-- [ ] Gravar `firmware/bancada` numa placa da gaveta — T4 v1.3 (completa,
-      `BANCADA_T4` no sketch) ou NodeMCU v3 (só pixel, core ESP8266, D2)
+- [ ] Fonte **12V** pros faróis (o AJK é 12V) e 74AHCT125 se o dado a 3.3V
+      não segurar — na bancada, cabo curto, 3.3V direto segurou
+- [x] Gravar `firmware/bancada` numa placa da gaveta — rodando na **T4 v1.3**,
+      pixel no GPIO21 (`SDA` do conector de 5 vias), com painel no display
 - [ ] Com a T4: começar o firmware grande nela — SD + fseq + protocolo
       rodam antes da T-CAN485 existir aqui
-- [ ] Farol no cabo: fecha os três testes de uma vez — 400 vs 800kHz,
-      1 vs 3 endereços por farol, ordem de cor
+- [x] Farol no cabo: os três testes fechados de uma vez, com 4 faróis —
+      **400kHz aceito**, **1 endereço por farol**, ordem de cor **BGR**
 - [ ] Pras cabeças depois: módulo MAX485 (ou ADM2582E, já isolado) + XLR.
       Tabela DMX não vem de manual: vem da **sonda** no inspector da cabeça —
       digita o endereço do menu, mexe slider por slider, rotula o que mexeu,
@@ -174,8 +175,9 @@ canais saem no cabo sem esperar o firmware da T-CAN485.
 
 ## Antes de comprar / montar
 
-- [ ] Testar 1 vs 3 endereços por farol AJK
-- [ ] Confirmar 400 ou 800kHz com o fabricante
+- [x] Testar 1 vs 3 endereços por farol AJK — **1 endereço**, 3 canais
+- [x] Confirmar 400 ou 800kHz — não precisou do fabricante, mediu-se na
+      bancada: **os dois funcionam**, ficou em 400kHz pela margem de timing
 - [ ] Definir se as moving heads são 12V ou AC — se AC, dimensionar inversor
       (3 × 60–150W além dos 3 SD3000)
 - [ ] Confirmar que a porta USB da central é host/OTG
