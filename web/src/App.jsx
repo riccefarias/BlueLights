@@ -17,6 +17,7 @@ import {
 import { capsOf, derive, responders } from "./motor/derivar.js";
 import { renderFrame } from "./motor/render.js";
 import { serializarFrame } from "./motor/canais.js";
+import { atropelos } from "./motor/atropelo.js";
 import { exportarFseq } from "./motor/exportar.js";
 import {
   EXTENSAO, desserializarDocumento, paraJson, serializarDocumento,
@@ -367,7 +368,7 @@ function Stage({ rig, frame, edit, sel, onPick, onMove, chan }) {
    PAINÉIS
    ============================================================ */
 
-function Timeline({ t, tracks, grade, sel, setSel, onOpen, scrub, compact, labelFor, peaks, ed, insercao }) {
+function Timeline({ t, tracks, grade, sel, setSel, onOpen, scrub, compact, labelFor, peaks, ed, insercao, avisos }) {
   const pct = v => `${(v / grade.duracao) * 100}%`;
   const drag = useRef(null);
   const sc = useRef(null);
@@ -576,12 +577,13 @@ function Timeline({ t, tracks, grade, sel, setSel, onOpen, scrub, compact, label
                 <div className="tl-ins" style={{ left: pct(insercao.t) }} />)}
               {tr.clips.map(c => (
                 <div key={c.id}
-                  className={`clip ${sel === c.id ? "sel" : ""} ${t >= c.t0 && t < c.t1 ? "act" : ""}`}
+                  className={`clip ${sel === c.id ? "sel" : ""} ${t >= c.t0 && t < c.t1 ? "act" : ""} ${avisos?.[c.id] ? "avi" : ""}`}
                   style={{ left: pct(c.t0), width: pct(c.t1 - c.t0), "--fx": EFFECTS[c.fx].color }}
                   onPointerDown={e => pegar(e, ti, c, null)}
                   onPointerMove={arrastar} onPointerUp={soltar} onPointerCancel={soltar}>
                   <span className="clip-hd ini"
                     onPointerDown={e => pegar(e, ti, c, "ini")} />
+                  {avisos?.[c.id] && <span className="clip-w" title="Movimento mais rápido que a cabeça">⚠</span>}
                   <span className="clip-t">{EFFECTS[c.fx].label}</span>
                   <span className="clip-hd fim"
                     onPointerDown={e => pegar(e, ti, c, "fim")} />
@@ -645,7 +647,7 @@ function CicloCtl({ k, v, m, ed }) {
   );
 }
 
-function EffectInsp({ selClip, insercao, tracks, labelFor, d, rig, ed }) {
+function EffectInsp({ selClip, insercao, tracks, labelFor, d, rig, ed, aviso }) {
   const alvoTrilha = selClip?.track || (insercao ? tracks[insercao.ti] : null);
   if (!alvoTrilha)
     return <div className="empty">Escolha um bloco na linha do tempo,
@@ -666,6 +668,12 @@ function EffectInsp({ selClip, insercao, tracks, labelFor, d, rig, ed }) {
         <span className="mono">{(clip.t0 / BEAT).toFixed(2)} bt</span></div>
       <div className="kv"><span>Duração</span>
         <span className="mono">{((clip.t1 - clip.t0) / BEAT).toFixed(2)} bt</span></div>
+
+      {aviso && (
+        <div className="hint hint-avi">⚠ Atropelamento: este bloco pede
+          {" "}~{Math.round(aviso.vel)}°/s de {aviso.eixo} da {labelFor(aviso.head)},
+          e a ficha dá {aviso.max}°/s — a cabeça vai chegar atrasada e fora do
+          tempo. Alongue o bloco, encurte o percurso ou baixe o ritmo.</div>)}
 
       {Object.entries(clip.p).map(([k, v]) => {
         const m = PARAM_META[k] || PARAM_PADRAO;
@@ -1149,6 +1157,19 @@ export default function App() {
   const soltarManual = useCallback(id =>
     setManual(m => { const { [id]: fora, ...resto } = m; return resto; }), []);
 
+  /* Alerta de atropelamento, com folga de 300ms: a varredura anda a
+     faixa inteira quadro a quadro — rodar a cada pixel de arrasto
+     travaria o dedo no celular. */
+  const [avisos, setAvisos] = useState({});
+  useEffect(() => {
+    const id = setTimeout(() => {
+      const out = {};
+      for (const a of atropelos(d, tracks, grade)) out[a.clipId] = a;
+      setAvisos(out);
+    }, 300);
+    return () => clearTimeout(id);
+  }, [d, tracks, grade]);
+
   const frameFinal = useMemo(() => {
     const ids = Object.keys(manual);
     if (!ids.length) return frame;
@@ -1545,12 +1566,12 @@ export default function App() {
             <div className="pane-t">{croqui ? "Equipamento" : "Efeito"}</div>
             {croqui
               ? <CroquiInsp item={pickItem} chan={d.chan} manual={pickItem ? manual[pickItem.id] : null} bytes={bytes} onCanal={setCanal} onSoltar={soltarManual} onGravar={gravarPose} onEdit={editItem} onDel={delItem} onAdd={addItem} />
-              : <EffectInsp selClip={selClip} insercao={insercao} tracks={tracks}
+              : <EffectInsp selClip={selClip} insercao={insercao} tracks={tracks} aviso={selClip ? avisos[selClip.clip.id] : null}
                   labelFor={labelFor} d={d} rig={rig} ed={ed} />}
           </aside>
         </div>
         <Timeline t={t} tracks={tracks} grade={grade} sel={sel} setSel={setSel} onOpen={pickClip} scrub={scrub}
-          labelFor={labelFor} peaks={peaks} ed={ed} insercao={insercao} />
+          labelFor={labelFor} peaks={peaks} ed={ed} insercao={insercao} avisos={avisos} />
       </>)}
 
       {novaTrilha && (<>
@@ -1602,7 +1623,7 @@ export default function App() {
         <div className="m-body">
           {mesa && tab !== "croqui" && tab !== "rig" &&
             <Timeline t={t} tracks={tracks} grade={grade} sel={sel} setSel={setSel} onOpen={pickClip} scrub={scrub} compact
-              labelFor={labelFor} ed={ed} insercao={insercao} />}
+              labelFor={labelFor} ed={ed} insercao={insercao} avisos={avisos} />}
           {palco && tab === "palco" && (
             <div className="pads">
               {cenas.map(s => (
@@ -1622,7 +1643,7 @@ export default function App() {
             </div>)}
           {palco && tab === "linha" &&
             <Timeline t={t} tracks={tracks} grade={grade} sel={sel} setSel={setSel} onOpen={pickClip} scrub={scrub} compact
-              labelFor={labelFor} ed={ed} insercao={insercao} />}
+              labelFor={labelFor} ed={ed} insercao={insercao} avisos={avisos} />}
           {tab === "croqui" && (
             <div className="m-croqui">
               {barraArquivo(true)}
@@ -1640,7 +1661,7 @@ export default function App() {
           <div className="sheet" role="dialog" aria-label="Efeito">
             <button className="sheet-grab" aria-label="Fechar"
               onClick={() => { setSheet(false); setInsercao(null); }} />
-            <EffectInsp selClip={selClip} insercao={insercao} tracks={tracks}
+            <EffectInsp selClip={selClip} insercao={insercao} tracks={tracks} aviso={selClip ? avisos[selClip.clip.id] : null}
                   labelFor={labelFor} d={d} rig={rig} ed={ed} />
           </div>
         </>)}
@@ -1839,6 +1860,10 @@ button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .alvo:hover{background:#152136;color:var(--ink)}
 .alvo-lb{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .clip.act{box-shadow:0 0 13px color-mix(in srgb,var(--fx) 42%,transparent)}
+.clip.avi{border-color:var(--hot);border-left-color:var(--hot)}
+.clip-w{flex:0 0 auto;font-size:10px;line-height:1;color:var(--hot);pointer-events:none;
+  text-shadow:0 0 6px rgba(255,59,107,.8)}
+.hint-avi{background:#1B0D12;border-color:#4A1A28;color:#FF9CB4}
 .clip.sel{border-color:var(--fx);background:color-mix(in srgb,var(--fx) 32%,#0E1420)}
 .clip.sel span{color:#fff}
 .ph{position:absolute;top:0;bottom:0;width:1px;background:var(--hot);pointer-events:none;

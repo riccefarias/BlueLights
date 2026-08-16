@@ -27,13 +27,19 @@ export const GOBOS = ["aberto", "pontos", "estrela", "listras", "quebrado", "esp
 export const CAT = { head: "Moving head", par: "Par / wash", strobe: "Strobo DMX",
   fog: "Fumaca", laser: "Laser" };
 
+/* `fisica`: curso em graus e velocidade máxima em °/s por eixo. O pan de
+   beam vem do dado real (540° em 2,5s = 216°/s); tilt e os outros perfis
+   são PROVISÓRIOS até a tabela DMX de cada cabeça chegar — servem pro
+   alerta de atropelamento acusar ordem de grandeza, não decimal. */
+const FISICA_HEAD = { pan: { curso: 540, vel: 216 }, tilt: { curso: 270, vel: 180 } };
+
 export const PROFILES = {
-  "beam-16": { name: "Beam 7R · com gobo", cat: "head", ch: [
+  "beam-16": { name: "Beam 7R · com gobo", cat: "head", fisica: FISICA_HEAD, ch: [
     "pan","pan+","tilt","tilt+","speed","dim","shut","color",
     "gobo","grot","prism","focus","fn","r","g","b"] },
-  "mini-11": { name: "Mini beam · com gobo", cat: "head", ch: [
+  "mini-11": { name: "Mini beam · com gobo", cat: "head", fisica: FISICA_HEAD, ch: [
     "pan","tilt","speed","dim","shut","color","gobo","grot","fn","r","g"] },
-  "wash-12": { name: "Wash RGBW · sem gobo", cat: "head", ch: [
+  "wash-12": { name: "Wash RGBW · sem gobo", cat: "head", fisica: FISICA_HEAD, ch: [
     "pan","pan+","tilt","tilt+","speed","dim","shut","color","r","g","b","w"] },
   "par-4":  { name: "Par LED RGBW", cat: "par", ch: ["r","g","b","w"] },
   "par-7":  { name: "Par LED · com dimmer", cat: "par", ch: ["dim","shut","r","g","b","w","speed"] },
