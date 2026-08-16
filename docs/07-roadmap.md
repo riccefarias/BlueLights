@@ -150,7 +150,8 @@ Os strobos — faróis RGB **endereçáveis**, corrente de pixel — chegam
 primeiro, e a gaveta rendeu **duas** placas. O "ESP32 comum" visto de perto
 é um **NodeMCU v3 (ESP8266)** — pro pixel tanto faz (o sketch compila pras
 duas), só a saída DMX que pede ESP32. E apareceu uma **TTGO T4 v1.3**:
-ESP32 de verdade, **com slot SD**, display e 8MB de PSRAM — bancada
+ESP32 de verdade, **com slot SD**, display e 4MB de PSRAM (medido; o ESP32
+clássico não endereça 8MB) — bancada
 completa (pixel + DMX) e, mais importante, **mula do firmware grande**: SD
 por SPI, gravação atômica, manifest e playback de fseq dá pra desenvolver
 nela antes da T-CAN485 chegar (sem encostar na PSRAM, que a T-CAN485 não

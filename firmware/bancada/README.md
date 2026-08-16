@@ -112,33 +112,78 @@ pixel, trava esperando clock e nunca dirige a linha — inofensivo. Se
 alguém passar a clocar o SCL, esse chip volta a dar ACK e passa a
 corromper o dado do WS2811.
 
-> Alternativas livres na T4, se o conector não servir: **GPIO19, 25, 26, 33**
-> (o 26 e o 33 só se o DMX não estiver em uso). Evitar GPIO0 e GPIO12, que
-> são strapping, e GPIO16/17, que são da PSRAM.
+> Alternativas livres na T4, se o conector não servir: **GPIO25, 26, 33**
+> (o 26 e o 33 só se o DMX não estiver em uso). Fora da lista: GPIO0 e
+> GPIO12 são strapping, GPIO16/17 são da PSRAM, **GPIO19 tem algo na placa
+> segurando ele em nível baixo** (lê 0 mesmo com pull-up interno ligado) e
+> 34..39 são só-entrada — três deles são os botões frontais.
 
 ## A tela da T4
 
 `painel_t4.h` transforma o display num monitor do show. Só entra na
 compilação com `BANCADA_T4` definido; no NodeMCU o arquivo some inteiro.
 
-- estado do link: **RECEBENDO** / **SEM SINAL** / **DEMO LOCAL**
-- fps real, tamanho do quadro e contador de quadros recebidos
-- grade com a cor de **cada node** — dá pra conferir mapeamento e ordem de
-  cor sem ter farol nenhum ligado no cabo
-- barras de nível R/G/B do quadro
-- cascata: X é tempo, Y é o node. A timeline do que já saiu no cabo
+Três páginas, trocadas pelo botão da esquerda:
+
+| página | o quê |
+|---|---|
+| **PAINEL** | link, uma linha por **subsistema**, mestre e cascata |
+| **PALCO** | os nodes em ladrilho grande, com número — pra ler de longe |
+| **DIAGNOSTICO** | quadro ruim, uptime, heap, custo de desenho, pinagem |
+
+A home é por subsistema, não por node, **porque node não escala**: o rig do
+carro passa de 10 faróis, mais relé, fumaça e cabeça. Grade de node ali
+viraria confete — o detalhe por node mora no PALCO, que se redimensiona
+sozinho. Relés e fumaça aparecem como `previsto` até o firmware acioná-los
+de verdade (fumaça: 3 canais DMX, ver `../../docs/13-maquina-de-fumaca.md`).
+
+A **cascata** é a única visão temporal: X é tempo, Y é o node.
+
+### Os 3 botões frontais
+
+Achados por varredura (são pinos só-entrada, pull-up externo da placa,
+fecham pra GND — ativos em **BAIXO**):
+
+| botão | GPIO | faz |
+|---|---|---|
+| VISTA | 38 | cicla as três páginas |
+| TESTE | 37 | autoteste: varre os nodes um a um em branco |
+| BLACKOUT | 39 | zera a saída e segura apagado |
+
+TESTE e BLACKOUT se excluem — os dois juntos seria uma varredura invisível.
+
+O autoteste acha **farol morto** e confere a **ordem física** da corrente
+sem PC nenhum: o node aceso tem que andar na mesma direção do cabo.
+
+### Sem sinal, a placa SEGURA o último quadro
+
+Não inventa animação sozinha. Varredura local é ação deliberada, no botão
+TESTE. (A regra "nunca carro apagado" do `../README.md` é do firmware do
+show, no carro; na bancada, surpresa é pior que escuro.)
 
 Na T4 o backlight fica **fixo aceso** e o estado vai pra tela — backlight
-piscando atrás de uma UI só atrapalha. O comportamento de LED piscando
-continua igual no NodeMCU.
+piscando atrás de uma UI só atrapalha. O LED piscando continua no NodeMCU.
+
+### O que mantém a tela fluida
 
 ⚠️ **Nada no código da T4 pode escrever na `Serial`**: ela carrega o
 protocolo Enttec binário a 921600. Debug é na tela.
 
-`DEMO_SEM_SINAL` (topo do sketch, ligado): sem quadro por 2s, a placa anima
-sozinha em vez de congelar. É a mesma regra do firmware do show
-(`../README.md`, "nunca carro apagado") e serve pra conferir fiação de
-WS2811 sem PC nenhum.
+1. **Só desenha o que mudou.** Todo valor tem cache. Repintar custa SPI à
+   toa e atrasa o `loop` — o buffer serial de 2048 B enche em ~130ms a
+   30fps, então desenho lento vira **quadro perdido**. Fonte proporcional
+   da GFX não pinta fundo direito, o que obriga a apagar a faixa antes de
+   escrever: fazer isso com texto que não mudou é flicker puro.
+2. **Animação anda por tempo, não por quadro.** O loop é preso ao
+   `dmx_wait_sent` (~23ms), então o intervalo entre desenhos varia. O que
+   conta desenho sai trêmulo; ancorado em `millis()`, não.
+
+O custo do último desenho aparece no DIAGNOSTICO como `tela` — a conversa
+sobre desempenho é com número, não com achismo.
+
+`quadros ruins` conta quadro Enttec com terminador errado. Como ponte
+serial não tem detecção de erro nenhuma (ver `../README.md`), ele é o
+termômetro do cabo USB.
 
 ## Gravar
 
@@ -172,6 +217,7 @@ que sai em cada farol. Com dois faróis no cabo dando cores diferentes, cada
 um é um endereço; a cor que cada byte acende dá a ordem do chip direto.
 Está no `-Modo ordem` do `enttec-teste.ps1`.
 
-> `NODES` agora conta **faróis**, não lentes. Ajusta pro que está no cabo.
+> `NODES` agora conta **faróis**, não lentes, e está em **6** pra bater com
+> o `RIG_PADRAO` do sequenciador. Node a mais que o cabo tem é ignorado.
 
 No Android não tem Web Serial; lá o caminho é o APK, como sempre foi o plano.

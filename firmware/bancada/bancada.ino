@@ -78,22 +78,32 @@ const int PIN_TX = 17, PIN_RX = 16, PIN_EN = 21;
 const dmx_port_t DMX = DMX_NUM_1;
 #endif
 
-/* Quantos nodes tem no cabo AGORA (1 farol de 3 nodes = 3). No app,
-   deixa a ordem de cor da fixture em RGB e ajusta a ordem AQUI — senão
-   os dois lados reordenam e o teste mente. */
 /* Medido: cada farol AJK é UM node (as 3 lentes são o mesmo pixel), então
    NODES conta FARÓIS. Ocupa os canais 1..NODES*3 do mapa. Node a mais que
-   o cabo tem é só ignorado — sobra não quebra nada. */
-const int NODES = 4;
+   o cabo tem é só ignorado — sobra não quebra nada, então vale deixar no
+   tamanho do croqui (6 faróis no RIG_PADRAO do sequenciador).
+
+   No app, a ordem de cor da fixture fica em RGB e a tradução é AQUI —
+   os dois lados reordenando ao mesmo tempo é teste que mente. */
+const int NODES = 6;
 
 /* NEO_BGR medido no farol AJK, não chutado: mandando um byte de cada vez
-   pelo fio, o 1º acendeu azul, o 2º verde e o 3º vermelho. */
+   pelo fio, o 1º acendeu azul, o 2º verde e o 3º vermelho.
+   NEO_KHZ400 idem: o chip aceita, e 400kHz dobra a margem de timing. */
 Adafruit_NeoPixel fita(NODES, PIN_PIXEL, NEO_BGR + NEO_KHZ400);
 
-/* Com a serial calada, anima local em vez de congelar o último quadro:
-   é a mesma regra do firmware do show ("nunca carro apagado", ver
-   ../README.md) e serve pra conferir fiação de WS2811 sem PC nenhum. */
-const bool DEMO_SEM_SINAL = true;
+#if defined(BANCADA_T4)
+/* Os 3 botões frontais da T4, achados por varredura: são pinos SÓ ENTRADA
+   (34..39 não têm pull-up interno no ESP32), com pull-up externo da placa,
+   e fecham pra GND — ou seja, ativos em BAIXO.
+   Ordem física da esquerda pra direita. */
+const int BTN_VISTA = 38;          // troca a página da tela
+const int BTN_TESTE = 37;          // autoteste de fiação, liga/desliga
+const int BTN_BLACK = 39;          // blackout, liga/desliga
+
+/* Sem sinal, a placa SEGURA o último quadro — não inventa animação
+   sozinha. Varredura local é coisa deliberada, no botão TESTE. */
+#endif
 
 #include "painel_t4.h"             // só compila algo se BANCADA_T4
 
@@ -102,6 +112,16 @@ uint8_t quadro[DMX_PACKET_SIZE] = { 0 };
 int tamanho = 513;                 // start code + 512 canais
 uint32_t ultimoDado = 0;
 uint32_t quadrosOk = 0;            // quantos quadros válidos já entraram
+
+/* Quadro que chegou com cabeçalho/terminador errado. Ponte serial não tem
+   detecção de erro nenhuma (ver ../README.md), então esse contador é o
+   termômetro do cabo USB: subindo, é ruído ou baud apertado demais. */
+uint32_t quadrosRuins = 0;
+
+/* O que sai no cabo pode não ser o que chegou: blackout zera e autoteste
+   substitui. Tela, pixel e DMX olham todos para cá, então o que aparece na
+   tela é sempre o que está saindo de verdade. */
+uint8_t saida[DMX_PACKET_SIZE] = { 0 };
 
 void setup() {
   Serial.setRxBufferSize(2048);    // antes do begin — no ESP32 depois não vale
@@ -118,39 +138,65 @@ void setup() {
   fita.show();                     // tudo apagado até chegar quadro
 
 #if defined(BANCADA_T4)
-  painel::iniciar(NODES, PIN_PIXEL, PIN_TX, PIN_EN);
+  pinMode(BTN_VISTA, INPUT);       // 34..39 não têm pull-up interno;
+  pinMode(BTN_TESTE, INPUT);       // o pull-up é externo, da placa
+  pinMode(BTN_BLACK, INPUT);
+  painel::iniciar();
 #endif
 }
 
-/* Animação local pra quando o sequenciador não está mandando: um cometa
-   com matiz girando. Escreve no MESMO buffer do quadro, então tela, pixel
-   e DMX continuam mostrando a mesma coisa — e o primeiro quadro que
-   chegar pela serial sobrescreve isto naturalmente. */
-void animacaoLocal() {
-  uint32_t t = millis();
+/* AUTOTESTE — varre os nodes um a um em branco, com rastro curto. Serve
+   pra achar farol morto e conferir a ordem FÍSICA da corrente sem PC:
+   o node que acende tem que andar na mesma direção do cabo.
+   Escreve na saída, nunca no quadro recebido. */
+void autoteste(uint8_t *dest) {
+  memset(dest + 1, 0, NODES * 3);
+  int fase = (millis() / 400) % NODES;
   for (int i = 0; i < NODES; i++) {
-    uint16_t matiz = (t * 12 + i * (65536 / max(NODES, 1))) & 0xFFFF;
-    // cauda: o node "da vez" acende cheio e os outros decaem
-    int fase = (t / 90) % max(NODES, 1);
     int dist = (i - fase + NODES) % NODES;
-    uint8_t brilho = dist == 0 ? 255 : dist == 1 ? 90 : 25;
-    uint32_t c = fita.gamma32(fita.ColorHSV(matiz, 255, brilho));
+    uint8_t v = dist == 0 ? 255 : dist == 1 ? 40 : 0;
+    if (!v) continue;
     int o = 1 + i * 3;
-    quadro[o]     = (c >> 16) & 0xFF;
-    quadro[o + 1] = (c >> 8) & 0xFF;
-    quadro[o + 2] = c & 0xFF;
+    dest[o] = dest[o + 1] = dest[o + 2] = v;
   }
 }
 
 /* Canais 1.. viram pixels na mesma ordem do croqui: o app serializa
    R,G,B por node e aqui a NeoPixel cuida da ordem do chip. */
-void mostraPixels() {
+void mostraPixels(const uint8_t *fonte) {
   for (int i = 0; i < NODES; i++) {
     int o = 1 + i * 3;             // +1 pula o start code
-    fita.setPixelColor(i, quadro[o], quadro[o + 1], quadro[o + 2]);
+    fita.setPixelColor(i, fonte[o], fonte[o + 1], fonte[o + 2]);
   }
   fita.show();
 }
+
+#if defined(BANCADA_T4)
+/* Botões ativos em BAIXO. Só a borda de descida conta, com trava de 180ms:
+   sem ela um toque vira três, porque o loop gira a ~40Hz.
+
+   TESTE e BLACKOUT se excluem — os dois ligados ao mesmo tempo seria uma
+   varredura invisível, que só confunde quem está olhando o cabo. */
+void leBotoes(int &pagina, bool &teste, bool &blackout) {
+  static const int pinos[3] = { BTN_VISTA, BTN_TESTE, BTN_BLACK };
+  static bool anterior[3] = { true, true, true };
+  static uint32_t trava[3] = { 0, 0, 0 };
+
+  for (int i = 0; i < 3; i++) {
+    bool nivel = digitalRead(pinos[i]);
+    bool desceu = anterior[i] && !nivel;
+    anterior[i] = nivel;
+    if (!desceu || millis() - trava[i] < 180) continue;
+    trava[i] = millis();
+
+    switch (i) {
+      case 0: pagina = (pagina + 1) % 3; break;
+      case 1: teste = !teste;    if (teste)    blackout = false; break;
+      case 2: blackout = !blackout; if (blackout) teste = false; break;
+    }
+  }
+}
+#endif
 
 /* Parser do quadro Enttec: 0x7E label lenL lenH payload 0xE7.
    Só o label 6 interessa; o resto é descartado em silêncio. */
@@ -175,11 +221,17 @@ void leSerial() {
         if (pos >= len) st = FIM;
         break;
       case FIM:
-        if (b == 0xE7 && label == 6) {
-          memcpy(quadro, corpo, len);      // corpo[0] já é o start code
-          tamanho = max(len, 25);          // DMX de verdade não gosta de quadro anão
-          ultimoDado = millis();
-          quadrosOk++;
+        if (b == 0xE7) {
+          if (label == 6) {
+            memcpy(quadro, corpo, len);    // corpo[0] já é o start code
+            tamanho = max(len, 25);        // DMX de verdade não gosta de quadro anão
+            ultimoDado = millis();
+            quadrosOk++;
+          }
+          // outro label é quadro Enttec legítimo que não nos interessa:
+          // descarta calado, sem contar como erro
+        } else {
+          quadrosRuins++;                  // terminador errado = quadro corrompido
         }
         st = ESPERA;
         break;
@@ -191,23 +243,36 @@ void loop() {
   leSerial();
 
   bool vivo = millis() - ultimoDado < 2000;
-  bool demo = !vivo && DEMO_SEM_SINAL;
-  if (demo) animacaoLocal();
+
+#if defined(BANCADA_T4)
+  static int pagina = 0;
+  static bool teste = false, blackout = false;
+  leBotoes(pagina, teste, blackout);
+#else
+  const bool teste = false, blackout = false;
+#endif
+
+  /* Decide o que REALMENTE sai no cabo. Sem sinal, segura o último quadro
+     — não inventa animação: carro apagado é problema do firmware do show,
+     na bancada surpresa é pior que escuro. */
+  if (blackout)     memset(saida, 0, sizeof(saida));
+  else if (teste)   autoteste(saida);
+  else              memcpy(saida, quadro, tamanho);
 
   /* Manda sempre, com ou sem dado novo: DMX é fita rolante, aparelho
      que fica 1s sem quadro entra em modo próprio. O pixel pega carona
      na mesma cadência (~30fps, limitada pelo quadro DMX de 513ch). */
 #if defined(ESP32)
-  dmx_write(DMX, quadro, tamanho);
+  dmx_write(DMX, saida, tamanho);
   dmx_send_num(DMX, tamanho);
   dmx_wait_sent(DMX, DMX_TIMEOUT_TICK);
-  mostraPixels();
+  mostraPixels(saida);
 #else
   /* Sem DMX segurando o ritmo, quem dá a cadência é o relógio. */
   static uint32_t proximo = 0;
   if ((int32_t)(millis() - proximo) >= 0) {
     proximo = millis() + 33;       // ~30fps, igual ao lado ESP32
-    mostraPixels();
+    mostraPixels(saida);
   }
 #endif
 
@@ -227,8 +292,9 @@ void loop() {
   }
   if ((int32_t)(millis() - proximaTela) >= 0) {
     proximaTela = millis() + 66;
-    painel::atualizar(quadro, NODES, demo ? 0 : (vivo ? 2 : 1),
-                      fps, tamanho - 1, quadrosOk);
+    painel::Estado e = { saida, NODES, vivo, fps, tamanho - 1,
+                         quadrosOk, quadrosRuins, pagina, teste, blackout };
+    painel::desenhar(e);
   }
 #else
   // LED aceso = recebendo do sequenciador; piscando = segurando o último quadro
