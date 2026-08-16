@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from "react"
 
 import {
   CAP, CAT, COLOR_ORDER, GOBOS, KIND, PROFILES, RIG_PADRAO, VH, VW,
-  chKey, chLb, footprint, nodesOf, profOf, sizeOf,
+  chKey, chLb, footprint, nodesOf, ordemDeCor, profOf, sizeOf,
 } from "./modelo/rig.js";
 import {
   BEAT, EFFECTS, FPS, PARAM_META, PARAM_PADRAO, SCENES, TRACKS, gradePadrao,
@@ -244,6 +244,12 @@ function Stage({ rig, frame, edit, sel, onPick, onMove, chan }) {
       g.globalCompositeOperation = "source-over";
     }
 
+    /* Posição na corrente: a ordem física do fio é a mesma do mapa de
+       canais (Y depois X) — o rótulo #N diz qual farol da fita é este. */
+    const ordemPix = {};
+    rig.filter(i => KIND[i.k].pixel).sort((a, b) => (a.y - b.y) || (a.x - b.x))
+      .forEach((it, i) => { ordemPix[it.id] = i + 1; });
+
     const rrect = (x, y, w, h, r) => {
       g.beginPath();
       g.moveTo(x + r, y);
@@ -317,7 +323,9 @@ function Stage({ rig, frame, edit, sel, onPick, onMove, chan }) {
           g.beginPath(); g.arc(lx, ly, S(46), 0, 7); g.fill();
           g.globalCompositeOperation = "source-over";
         }
-        g.fillStyle = edit ? "#2E3E58"
+        /* No croqui o node também mostra a cor viva (teste/piscar da mesa):
+           é o que liga o desenho ao farol físico na hora de mapear. */
+        g.fillStyle = edit && lum <= .05 ? "#2E3E58"
           : `rgb(${Math.max(18, c[0])},${Math.max(20, c[1])},${Math.max(26, c[2])})`;
         g.beginPath(); g.arc(lx, ly, Math.max(2, S(hh > S(20) ? 5 : 4)), 0, 7); g.fill();
       }
@@ -325,7 +333,7 @@ function Stage({ rig, frame, edit, sel, onPick, onMove, chan }) {
       if (edit) {
         g.fillStyle = on ? "#8FB4FF" : "#46587A";
         g.font = `600 ${Math.max(8, S(11))}px 'IBM Plex Mono',monospace`;
-        g.fillText(`ch${chan[it.id] ?? "?"} · ${n}n`, x, y - S(7));
+        g.fillText(`#${ordemPix[it.id]} · ch${chan[it.id] ?? "?"} · ${n}n`, x, y - S(7));
       }
     });
 
@@ -962,7 +970,11 @@ function SondaDmx({ sonda, setSonda, item, onEdit }) {
   </>);
 }
 
-function CroquiInsp({ item, chan, manual, bytes, onCanal, onSoltar, onGravar, onEdit, onDel, onAdd, sonda, setSonda }) {
+const hexDeRgb = c => "#" + (c || [0, 0, 0])
+  .map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("");
+const rgbDeHex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) || 0);
+
+function CroquiInsp({ item, chan, pix, manual, bytes, onCanal, onCor, onSoltar, onGravar, onEdit, onDel, onAdd, sonda, setSonda, flash, onFlash }) {
   return (<>
     <div className="palette">
       {["cab", "farol", "fita", "head"].map(k => (
@@ -980,6 +992,9 @@ function CroquiInsp({ item, chan, manual, bytes, onCanal, onSoltar, onGravar, on
       </div>
       <div className="kv"><span>Posição</span><span className="mono">{Math.round(item.x)} , {Math.round(item.y)}</span></div>
       <div className="kv"><span>Canal inicial</span><span className="mono">{chan[item.id] ?? "—"}</span></div>
+      {KIND[item.k].pixel && pix && (
+        <div className="kv"><span>Posição na fita</span>
+          <span className="mono">#{pix.findIndex(p => p.id === item.id) + 1} de {pix.length}</span></div>)}
       {item.k === "head" && (
         <div className="kv"><span>Ocupa</span>
           <span className="mono">{footprint(item)} canais</span></div>)}
@@ -1005,6 +1020,42 @@ function CroquiInsp({ item, chan, manual, bytes, onCanal, onSoltar, onGravar, on
         {item.k === "farol" && (
           <div className="hint">Medido na bancada: o AJK é 1 node — as 3 lentes são o mesmo
             pixel. O 3 fica aqui pra farol de outro modelo.</div>)}
+
+        <div className="sec">Cor por node · teste ao vivo</div>
+        <div className="chmap">
+          {Array.from({ length: nodesOf(item) }, (_, i) => {
+            const base = (chan[item.id] ?? 1) + i * ordemDeCor(item).length;
+            /* Sem teste ativo, a amostra mostra o que o show está mandando
+               agora — lido dos bytes já serializados, na ordem do fio. */
+            const cor = Array.isArray(manual) ? (manual[i] || [0, 0, 0]) : (() => {
+              const o = ordemDeCor(item), rgb = [0, 0, 0];
+              for (let c = 0; c < o.length; c++) {
+                const k = { R: 0, G: 1, B: 2 }[o[c]];
+                if (k != null) rgb[k] = bytes?.[base - 1 + c] ?? 0;
+              }
+              return rgb;
+            })();
+            return (
+              <div key={i} className="chrow">
+                <span className="mono chn">{base}</span>
+                <span className="chl">node {i + 1}</span>
+                <input type="color" className="corpick" value={hexDeRgb(cor)}
+                  aria-label={`cor do node ${i + 1} (canal ${base})`}
+                  onChange={e => onCor(item.id, i, rgbDeHex(e.target.value), item)} />
+                <span className="mono chv">{hexDeRgb(cor)}</span>
+              </div>);
+          })}
+        </div>
+        <button className={`grava ${flash?.id === item.id ? "on" : ""}`}
+          onClick={() => onFlash(item.id)}>
+          {flash?.id === item.id ? "Parar de piscar" : "Piscar pra localizar"}
+        </button>
+        {Array.isArray(manual) && (
+          <button className="solta" onClick={() => onSoltar(item.id)}>
+            Soltar teste — volta pro show</button>)}
+        <div className="hint">A cor sai no preview e no cabo (DMX ligado). "Piscar"
+          acende só esta fixture em branco — é o jeito de descobrir qual farol
+          físico é este aqui do croqui.</div>
       </>)}
 
       {item.k === "head" && (<>
@@ -1343,6 +1394,29 @@ export default function App() {
   const soltarManual = useCallback(id =>
     setManual(m => { const { [id]: fora, ...resto } = m; return resto; }), []);
 
+  /* Mesa dos pixels: manual[id] de fixture pixel é ARRAY de [r,g,b] por
+     node (a das heads é objeto canal→byte). O serializador cuida da
+     ordem de cor do fio; aqui é sempre RGB. */
+  const setCorNode = useCallback((id, i, rgb, it) => {
+    setManual(m => {
+      const base = Array.isArray(m[id]) ? [...m[id]]
+        : Array.from({ length: nodesOf(it) }, () => [0, 0, 0]);
+      base[i] = rgb;
+      return { ...m, [id]: base };
+    });
+  }, []);
+
+  /* Localizar: pisca a fixture em branco no preview E no cabo — é o
+     jeito de descobrir qual farol físico é qual no croqui. */
+  const [flash, setFlash] = useState(null);          // { id, on }
+  const alternarFlash = useCallback(id =>
+    setFlash(f => f?.id === id ? null : { id, on: true }), []);
+  useEffect(() => {
+    if (!flash) return undefined;
+    const iv = setInterval(() => setFlash(f => f && { ...f, on: !f.on }), 280);
+    return () => clearInterval(iv);
+  }, [flash?.id]);
+
   /* Alerta de atropelamento, com folga de 300ms: a varredura anda a
      faixa inteira quadro a quadro — rodar a cada pixel de arrasto
      travaria o dedo no celular. */
@@ -1358,14 +1432,28 @@ export default function App() {
 
   const frameFinal = useMemo(() => {
     const ids = Object.keys(manual);
-    if (!ids.length) return frame;
+    if (!ids.length && !flash) return frame;
     const heads = { ...frame.heads };
+    const pixels = { ...frame.pixels };
     ids.forEach(id => {
-      const h = rig.find(i => i.id === id);
-      if (h && heads[id]) heads[id] = { ...heads[id], ...manualParaEstado(h, manual[id]) };
+      const it = rig.find(i => i.id === id);
+      if (!it) return;
+      if (KIND[it.k].pixel) {
+        const cores = manual[id];
+        pixels[id] = Array.from({ length: nodesOf(it) }, (_, i) => cores[i] || [0, 0, 0]);
+      } else if (heads[id]) {
+        heads[id] = { ...heads[id], ...manualParaEstado(it, manual[id]) };
+      }
     });
-    return { ...frame, heads };
-  }, [frame, manual, rig]);
+    if (flash) {
+      const it = rig.find(i => i.id === flash.id);
+      if (it && KIND[it.k].pixel) {
+        const c = flash.on ? [255, 255, 255] : [0, 0, 0];
+        pixels[flash.id] = Array.from({ length: nodesOf(it) }, () => c);
+      }
+    }
+    return { ...frame, heads, pixels };
+  }, [frame, manual, rig, flash]);
   const bytes = useMemo(() => serializarFrame(d, frameFinal), [d, frameFinal]);
 
   /* ---------- DMX ao vivo pela USB (bancada) ----------
@@ -1790,7 +1878,7 @@ export default function App() {
           <aside className="insp">
             <div className="pane-t">{croqui ? "Equipamento" : "Efeito"}</div>
             {croqui
-              ? <CroquiInsp item={pickItem} chan={d.chan} manual={pickItem ? manual[pickItem.id] : null} bytes={bytes} onCanal={setCanal} onSoltar={soltarManual} onGravar={gravarPose} onEdit={editItem} onDel={delItem} onAdd={addItem} sonda={sonda} setSonda={setSonda} />
+              ? <CroquiInsp item={pickItem} chan={d.chan} pix={d.pix} manual={pickItem ? manual[pickItem.id] : null} bytes={bytes} onCanal={setCanal} onCor={setCorNode} flash={flash} onFlash={alternarFlash} onSoltar={soltarManual} onGravar={gravarPose} onEdit={editItem} onDel={delItem} onAdd={addItem} sonda={sonda} setSonda={setSonda} />
               : <EffectInsp selClip={selClip} insercao={insercao} tracks={tracks} aviso={selClip ? avisos[selClip.clip.id] : null}
                   labelFor={labelFor} d={d} rig={rig} ed={ed} />}
           </aside>
@@ -1872,7 +1960,7 @@ export default function App() {
           {tab === "croqui" && (
             <div className="m-croqui">
               {barraArquivo(true)}
-              <CroquiInsp item={pickItem} chan={d.chan} manual={pickItem ? manual[pickItem.id] : null} bytes={bytes} onCanal={setCanal} onSoltar={soltarManual} onGravar={gravarPose} onEdit={editItem} onDel={delItem} onAdd={addItem} sonda={sonda} setSonda={setSonda} />
+              <CroquiInsp item={pickItem} chan={d.chan} pix={d.pix} manual={pickItem ? manual[pickItem.id] : null} bytes={bytes} onCanal={setCanal} onCor={setCorNode} flash={flash} onFlash={alternarFlash} onSoltar={soltarManual} onGravar={gravarPose} onEdit={editItem} onDel={delItem} onAdd={addItem} sonda={sonda} setSonda={setSonda} />
             </div>)}
           {tab === "rig" && (
             <div className="m-rig">
@@ -2177,6 +2265,11 @@ button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .grava{margin:10px 13px 0;width:calc(100% - 26px);padding:9px;border-radius:8px;
   background:#0B1A18;border:1px solid #2E5B4E;color:#6FD3B4;font-size:11.5px;font-weight:600}
 .grava:hover{background:#10241F}
+.grava.on{background:#3A2B10;border-color:#FFA023;color:#FFC46B}
+.corpick{flex:1;min-width:0;height:30px;padding:0;border:1px solid var(--line);
+  border-radius:7px;background:#0D1420}
+.corpick::-webkit-color-swatch-wrapper{padding:3px}
+.corpick::-webkit-color-swatch{border:none;border-radius:5px}
 .sonda-num{width:64px;padding:3px 7px;border-radius:6px;background:#0D1420;
   border:1px solid var(--line);color:var(--ink);font-size:11px;text-align:right}
 .sonda-sel{flex:0 0 96px;padding:2px 4px;border-radius:6px;background:#0D1420;
