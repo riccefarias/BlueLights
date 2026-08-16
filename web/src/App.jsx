@@ -2049,8 +2049,13 @@ const CSS = `
   border:2px solid transparent;background-clip:padding-box}
 *::-webkit-scrollbar-thumb:hover{background:#2E415F}
 *::-webkit-scrollbar-corner{background:transparent}
+input,textarea{user-select:text;-webkit-user-select:text}
 .app{--void:#070A12;--panel:#0E1420;--line:#1C2534;--line2:#141C29;
   --ink:#E8EEF7;--chrome:#7D8AA0;--blue:#2B6BFF;--amber:#FFA023;--hot:#FF3B6B;
+  /* Superfície de controle: arrasto em cima de texto (régua, clip, rótulo)
+     não pode virar seleção azul no meio do gesto. Seleção volta só onde
+     digitar é o ponto. */
+  user-select:none;-webkit-user-select:none;
   position:absolute;inset:0;display:flex;flex-direction:column;background:var(--void);
   color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:13px;overflow:hidden}
 .mono{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}
