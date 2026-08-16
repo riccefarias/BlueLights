@@ -418,6 +418,14 @@ function Stage({ rig, frame, edit, sel, onPick, onMove, chan }) {
 
   const reset = () => { cam.current = { z: 1, cx: VW / 2, cy: VH / 2 }; draw(); };
 
+  /* Botões pra quem não descobre pinça/ctrl+roda: zoom em degraus no
+     centro da vista atual. */
+  const zoomBtn = f => () => {
+    cam.current.z = Math.max(1, Math.min(8, cam.current.z * f));
+    if (cam.current.z <= 1.01) { cam.current = { z: 1, cx: VW / 2, cy: VH / 2 }; }
+    draw();
+  };
+
   const down = (e) => {
     const p = toV(e);
     const hit = edit && [...rig].reverse().find(it => {
@@ -451,9 +459,18 @@ function Stage({ rig, frame, edit, sel, onPick, onMove, chan }) {
   };
   const up = () => { drag.current = null; };
 
-  return <canvas ref={ref} className={`stage ${edit ? "stage-e" : ""}`}
-    onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
-    onDoubleClick={reset} />;
+  return (
+    <div className="stage-w">
+      <canvas ref={ref} className={`stage ${edit ? "stage-e" : ""}`}
+        onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
+        onDoubleClick={reset} />
+      <div className="zoomctl">
+        <button onClick={zoomBtn(1 / 1.5)} title="Afastar">−</button>
+        <button onClick={reset} title="Enquadramento cheio (ou duplo toque)">⤢</button>
+        <button onClick={zoomBtn(1.5)} title="Aproximar (pinça e ctrl+roda também funcionam)">+</button>
+      </div>
+    </div>
+  );
 }
 
 /* ============================================================
@@ -1118,11 +1135,13 @@ function BarraArquivo({ nome, estado, precisaPerm, onAbrir, onSalvar, onRetomar,
       <button className="ar-b" onClick={onSalvar}>
         {temFSA ? "Salvar como" : "Baixar"}
       </button>
-      {temSerial && (
-        <button className={`ar-b ${dmxOn ? "on" : ""}`} onClick={onDmx}
-          title="Bancada: manda o que está tocando (ou a mesa) como DMX pela USB — precisa do firmware/bancada num ESP32">
-          {dmxOn ? "DMX ●" : "DMX"}
-        </button>)}
+      <button className={`ar-b ${dmxOn ? "on" : ""}`} disabled={!temSerial}
+        onClick={temSerial ? onDmx : undefined}
+        title={temSerial
+          ? "Bancada: manda o que está tocando (ou a mesa) como DMX pela USB — precisa do firmware/bancada num ESP32"
+          : "Este browser não tem Web Serial — use Chrome/Edge no desktop. No Android o caminho é o APK."}>
+        {dmxOn ? "DMX ●" : "DMX"}
+      </button>
     </div>
   );
 }
@@ -1915,6 +1934,7 @@ button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
   font-size:10.5px;font-weight:600;color:var(--chrome);white-space:nowrap;transition:.13s}
 .ar-b:hover{background:#152136;color:var(--ink)}
 .ar-b.on{background:#122140;border-color:var(--blue);color:#8FB4FF}
+.ar-b:disabled{opacity:.4;cursor:not-allowed}
 .ar-c{padding:0 13px 12px;flex-wrap:wrap}
 
 .body{flex:1;display:grid;grid-template-columns:206px 1fr 226px;min-height:0}
@@ -1939,7 +1959,12 @@ button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .seg{display:flex;gap:2px;padding:2px;border-radius:8px;background:#0D1420;border:1px solid var(--line)}
 .seg-b{padding:5px 11px;border-radius:6px;font-size:11px;font-weight:600;color:var(--chrome)}
 .seg-b.on{background:#1B2942;color:var(--ink)}
+.stage-w{flex:1;position:relative;display:flex;min-height:0}
 .stage{flex:1;width:100%;display:block;min-height:0;touch-action:none}
+.zoomctl{position:absolute;right:10px;bottom:10px;display:flex;gap:6px}
+.zoomctl button{width:36px;height:36px;border-radius:9px;background:rgba(13,20,32,.88);
+  border:1px solid var(--line);color:#8FB4FF;font-size:17px;line-height:1}
+.zoomctl button:active{background:#152136}
 .stage-e{cursor:grab}
 
 .insp{background:var(--panel);border-left:1px solid var(--line);overflow-y:auto;padding-bottom:14px}
