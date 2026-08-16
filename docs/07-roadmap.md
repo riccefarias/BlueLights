@@ -130,6 +130,12 @@ estágios (standby + boost, interlock local, telemetria pelo CAN), o desenho
 está em [13-maquina-de-fumaca.md](13-maquina-de-fumaca.md) — junto com o
 lookahead de boost no motor e o alerta de duty cycle, ambos futuros.
 
+Show sem timeline montada — música do cast sem animação e o caso crítico do
+**link FM ao vivo**: o desenho do diretor automático (uma engine, duas fontes
+de tempo; gerador offline vira clips editáveis, modo ao vivo valida no
+browser + bancada antes do firmware) está em
+[14-diretor-automatico.md](14-diretor-automatico.md).
+
 ## Trocas pra quando crescer
 
 Nenhuma importa nos ~18 nodes atuais:
