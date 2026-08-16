@@ -49,7 +49,14 @@ Hoje o exportador baixa o arquivo; falta a ponte até o cartão.
 
 ### 5. Áudio de verdade
 
-Detecção de BPM, marcadores editáveis, zoom.
+Detector de andamento **feito** — ver `06-sincronismo-audio.md`. Falta o que
+ele destranca:
+
+- **Grade vinda do arquivo.** Hoje `DURATION = BPM × BARS` = 15 segundos, e a
+  duração devia vir do áudio. É o que impede sequenciar faixa de verdade
+- **Mapa de batidas** no lugar do BPM escalar, e o efeito falando em batida em
+  vez de segundo. Resolve rubato e mata a deriva por construção
+- Zoom na timeline, necessário assim que passar de 8 compassos
 
 ### 6. Value curves
 
