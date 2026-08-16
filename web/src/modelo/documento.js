@@ -100,7 +100,20 @@ function validarSequencia(seq) {
       clips: tr.clips.map(c => {
         let idC = c.id;
         if (typeof idC !== "string" || !idC) ({ id: idC, n: nC } = livre(idsC, "c", nC));
-        return { ...c, id: idC, p: c.p && typeof c.p === "object" ? c.p : {} };
+        /* Curvas entram saneadas: keyframe sem número vira curva descartada,
+           não documento recusado — o clip continua valendo pelo `p`. */
+        const { kf: kfCru, ...cBase } = c;
+        let kf = null;
+        if (kfCru && typeof kfCru === "object") {
+          kf = {};
+          for (const [k, arr] of Object.entries(kfCru))
+            if (Array.isArray(arr) && arr.length >= 2 &&
+                arr.every(pt => pt && Number.isFinite(pt.u) && Number.isFinite(pt.v)))
+              kf[k] = arr.map(pt => ({ u: pt.u, v: pt.v }));
+          if (!Object.keys(kf).length) kf = null;
+        }
+        return { ...cBase, id: idC, p: c.p && typeof c.p === "object" ? c.p : {},
+                 ...(kf ? { kf } : {}) };
       }),
     };
   });

@@ -99,6 +99,23 @@ export function gradeFixa({ bpm = 128, offset = 0, duracao = 15, ...extra } = {}
   return gradeDeBatidas(batidas, duracao, extra);
 }
 
+/* Move uma batida pra onde ela realmente está. A batida movida é a
+   âncora; os trechos até as vizinhas reinterpolam por construção —
+   `indiceEm`/`tempoDe` são lineares por segmento, então esticar um
+   segmento É a reinterpolação, sem passo extra.
+
+   Clamp entre as vizinhas: batida não passa por cima de batida —
+   cruzar quebraria a busca binária e não significa nada musical. */
+export function moverBatida(grade, i, t) {
+  const b = Array.from(grade.batidas);
+  if (i < 0 || i >= b.length) return grade;
+  const eps = 1e-3;
+  const min = i > 0 ? b[i - 1] + eps : 0;
+  const max = i < b.length - 1 ? b[i + 1] - eps : grade.duracao;
+  b[i] = Math.max(min, Math.min(max, t));
+  return gradeDeBatidas(b, grade.duracao, { confianca: grade.confianca });
+}
+
 /** Grade do documento salvo, com o formato compacto. */
 export function gradeDeDoc(g) {
   if (g?.batidas?.length >= 2)

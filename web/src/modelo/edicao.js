@@ -110,15 +110,46 @@ export function removerClip(tracks, ti, id) {
 
 /* Trocar o efeito troca os parâmetros junto: `hue` de uma corrida não
    quer dizer nada num gobo, e carregar sobra de parâmetro antigo é o
-   tipo de coisa que reaparece meses depois como bug de render. */
+   tipo de coisa que reaparece meses depois como bug de render.
+   As curvas caem pelo mesmo motivo — são curvas DAQUELES parâmetros. */
 export function trocarEfeito(tracks, ti, id, fx) {
-  return comTrilha(tracks, ti, tr => comClips(tr, tr.clips.map(c =>
-    c.id === id ? { ...c, fx, p: { ...(EFFECTS[fx].p || {}) } } : c)));
+  return comTrilha(tracks, ti, tr => comClips(tr, tr.clips.map(c => {
+    if (c.id !== id) return c;
+    const { kf, ...resto } = c;
+    return { ...resto, fx, p: { ...(EFFECTS[fx].p || {}) } };
+  })));
 }
 
 export function ajustarParam(tracks, ti, id, chave, valor) {
   return comTrilha(tracks, ti, tr => comClips(tr, tr.clips.map(c =>
     c.id === id ? { ...c, p: { ...c.p, [chave]: valor } } : c)));
+}
+
+/* ---------- value curves ---------- */
+
+/* Liga com A e B no valor atual — a luz não muda até mexer num dos
+   dois. Desliga herdando o A como valor fixo: é o que estava valendo
+   no início do clip, o palpite menos surpreendente. */
+export function curvarParam(tracks, ti, id, chave, ligar) {
+  return comTrilha(tracks, ti, tr => comClips(tr, tr.clips.map(c => {
+    if (c.id !== id) return c;
+    if (ligar) {
+      const v = c.p[chave] ?? 0;
+      return { ...c, kf: { ...c.kf, [chave]: [{ u: 0, v }, { u: 1, v }] } };
+    }
+    const { [chave]: kfs, ...resto } = c.kf || {};
+    const novo = { ...c, p: { ...c.p, [chave]: kfs?.[0]?.v ?? c.p[chave] } };
+    if (Object.keys(resto).length) novo.kf = resto; else delete novo.kf;
+    return novo;
+  })));
+}
+
+export function ajustarKf(tracks, ti, id, chave, idx, v) {
+  return comTrilha(tracks, ti, tr => comClips(tr, tr.clips.map(c => {
+    if (c.id !== id || !c.kf?.[chave]?.[idx]) return c;
+    const kfs = c.kf[chave].map((k, i) => i === idx ? { ...k, v } : k);
+    return { ...c, kf: { ...c.kf, [chave]: kfs } };
+  })));
 }
 
 /* ---------- trilhas ---------- */

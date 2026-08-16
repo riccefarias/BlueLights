@@ -54,6 +54,28 @@ export const lembrarHandle = h => noDb("readwrite", s => s.put(h, CHAVE));
 export const handleLembrado = () => noDb("readonly", s => s.get(CHAVE));
 export const esquecerHandle = () => noDb("readwrite", s => s.delete(CHAVE));
 
+/* ---------- rascunho: a rede embaixo do arquivo ----------
+
+   No celular não existe File System Access, então "salvar" é baixar —
+   e ninguém baixa a cada ajuste. O rascunho grava o documento no
+   IndexedDB a cada pausa da edição: a aba pode morrer que o trabalho
+   volta sozinho na próxima visita.
+
+   Não substitui o arquivo. O `.blz.json` continua sendo a fonte que
+   viaja, versiona e vai por WhatsApp; o rascunho é local deste browser
+   e o sistema pode despejá-lo sob pressão de disco. É cinto de
+   segurança, não porta-malas.
+
+   A mídia vai junto num blob separado: o áudio não cabe (nem deve)
+   no documento, mas sem ele a sessão retomada volta muda. */
+
+const R_DOC = "rascunho", R_MIDIA = "rascunho-midia";
+
+export const guardarRascunho = doc => noDb("readwrite", s => s.put(doc, R_DOC));
+export const rascunhoGuardado = () => noDb("readonly", s => s.get(R_DOC));
+export const guardarMidia = blob => noDb("readwrite", s => s.put(blob, R_MIDIA));
+export const midiaGuardada = () => noDb("readonly", s => s.get(R_MIDIA));
+
 /* ---------- permissão ---------- */
 
 /** @param {boolean} pedir true só dentro de um gesto do usuário. */

@@ -8,6 +8,7 @@ import { chKey, nodesOf, profOf } from "../modelo/rig.js";
 import { TRACKS } from "../modelo/sequencia.js";
 import { gradePadrao } from "../modelo/sequencia.js";
 import { renderPixelFx, renderDmxFx } from "./efeitos.js";
+import { resolverP } from "./curvas.js";
 
 export function estadoInicialDeHead() {
   return { pan: 0, tilt: 0, dim: 0, rgb: [0, 0, 0], gobo: 0, grot: 0 };
@@ -26,7 +27,7 @@ export function renderFrame(d, t, master = 1, tracks = TRACKS, grade = gradePadr
     if (track.kind === "dmx") {
       const hg = d.groups.find(g => g.id === track.target);
       const ids = (hg ? hg.members : [track.target]).filter(i => heads[i]);
-      const st = renderDmxFx(clip.fx, clip.p, tL, t, grade);
+      const st = renderDmxFx(clip.fx, resolverP(clip, t), tL, t, grade);
       ids.forEach(i => {
         const cur = heads[i];
         // merge por campo: sweep escreve pan, gobos escreve gobo.
@@ -41,7 +42,7 @@ export function renderFrame(d, t, master = 1, tracks = TRACKS, grade = gradePadr
     const members = (grp ? grp.members : [track.target]).filter(id => pixels[id]);
     if (!members.length) continue;
     const total = members.reduce((s, id) => s + pixels[id].length, 0);
-    const buf = renderPixelFx(clip.fx, clip.p, total, tL, t, grade);
+    const buf = renderPixelFx(clip.fx, resolverP(clip, t), total, tL, t, grade);
     let k = 0;
     for (const id of members)
       for (let i = 0; i < pixels[id].length; i++, k++) {

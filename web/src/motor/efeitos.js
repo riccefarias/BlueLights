@@ -45,12 +45,23 @@ export function renderPixelFx(fx, p, n, tL, tG, grade) {
   } else if (fx === "pulse") {
     const b = Math.pow(1 - grade.faseEm(tG, p.div ?? 1), 2.2);
     for (let i = 0; i < n; i++) out[i] = hsv(p.hue ?? .58, .9, b);
+  } else if (fx === "cor") {
+    // manual: a cor que a pessoa escolheu, parada — com curva A→B ela anda
+    const c = hsv(p.hue ?? .6, p.sat ?? .9, p.dim ?? 1);
+    for (let i = 0; i < n; i++) out[i] = c;
   }
   return out;
 }
 
 export function renderDmxFx(fx, p, tL, tG, grade) {
   const bG = grade.indiceEm(tG);
+
+  /* Pose manual: a cabeça vai pra onde a pessoa apontou e fica. É o bloco
+     de "sequência na mão" — cada parâmetro aceita curva A→B, então pose
+     também é o jeito de keyframar movimento sem fórmula nenhuma. */
+  if (fx === "pose") return {
+    pan: p.pan ?? 0, tilt: p.tilt ?? 0, dim: p.dim ?? 1,
+    rgb: hsv(p.hue ?? 0, p.sat ?? 0, 1), gobo: Math.round(p.gobo ?? 0) };
 
   if (fx === "sweep") return {
     pan: Math.sin(bG * Math.PI * 2 * (p.rate ?? .125)) * (p.range ?? .6),

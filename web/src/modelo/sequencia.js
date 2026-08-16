@@ -1,4 +1,5 @@
 import { gradeFixa } from "./grade.js";
+import { GOBOS } from "./rig.js";
 
 /* ============================================================
    MODELO — a sequência: grade de tempo, efeitos, trilhas, cenas.
@@ -24,8 +25,15 @@ export const EFFECTS = {
             p: { speed: .5, hue: .55 } },
   pulse:  { label: "Pulso", color: "#2B6BFF", needs: ["rgb"],
             p: { div: 1, hue: .58 } },
+  /* Blocos manuais: aqui quem manda é a pessoa, não uma fórmula. `cor`
+     pinta os pixels parado; `pose` posiciona a cabeça. Com curva A→B em
+     cima, pose vira movimento keyframado — é o "sequência manual". */
+  cor:    { label: "Cor fixa", color: "#5CC8FF", needs: ["rgb"],
+            p: { hue: .6, sat: .9, dim: 1 } },
   strobe: { label: "Strobo", color: "#2B6BFF", needs: ["rgb"],
             p: { div: 2, hue: 0, sat: 0 } },
+  pose:   { label: "Pose", color: "#8FB4FF", needs: ["dim"],
+            p: { pan: 0, tilt: -.3, dim: 1, hue: 0, sat: 0, gobo: 0 } },
   sweep:  { label: "Varredura", color: "#FFA023", needs: ["pan", "tilt"],
             p: { rate: .125, range: .6, tilt: 0, hue: .6 } },
   beam:   { label: "Feixe", color: "#FFA023", needs: ["dim"],
@@ -45,19 +53,31 @@ export const EFFECTS = {
 };
 
 /* Faixa de cada parâmetro, pro inspetor virar slider de verdade em vez
-   de barrinha decorativa. Parâmetro sem entrada aqui cai no padrão. */
+   de barrinha decorativa. Parâmetro sem entrada aqui cai no padrão.
+
+   `interp` é como uma value curve anda entre keyframes (motor/curvas.js):
+   matiz é circular (0.95→0.05 cruza o zero), divisor é passo (não existe
+   "divisão 2.37" — segura e pula). Quem não declara interpola linear. */
+/* `tipo`/`uni`/`cor` são dicas de apresentação: o VALOR continua
+   normalizado (ciclos por batida, 0..1) — quem exporta e quem renderiza
+   não muda. `tipo: "ciclo"` diz que o número cru é ilegível ("0.12") e o
+   inspetor deve falar em período musical ("a cada 8 bt") com sentido. */
 export const PARAM_META = {
-  rate:   { min: -1, max: 1, step: .005, lb: "taxa por batida" },
-  speed:  { min: -2, max: 2, step: .01, lb: "voltas por batida" },
+  rate:   { min: -1, max: 1, step: .005, lb: "ritmo", tipo: "ciclo" },
+  speed:  { min: -2, max: 2, step: .01, lb: "ritmo", tipo: "ciclo" },
   spread: { min: 0, max: 4, step: .05, lb: "espalhamento" },
-  hue:    { min: 0, max: 1, step: .005, lb: "matiz" },
-  sat:    { min: 0, max: 1, step: .01, lb: "saturação" },
-  div:    { min: 0, max: 8, step: .25, lb: "divisão" },
-  range:  { min: 0, max: 1, step: .01, lb: "amplitude" },
-  tilt:   { min: -1, max: 1, step: .01, lb: "tilt" },
-  pos:    { min: 0, max: 1, step: .01, lb: "posição" },
-  forca:  { min: 0, max: 1, step: .01, lb: "força" },
-  vento:  { min: 0, max: 1, step: .01, lb: "ventilador" },
+  hue:    { min: 0, max: 1, step: .005, lb: "matiz", interp: "circular", cor: true },
+  sat:    { min: 0, max: 1, step: .01, lb: "saturação", uni: "%" },
+  div:    { min: 0, max: 8, step: .25, lb: "divisão", interp: "passo", tipo: "div" },
+  range:  { min: 0, max: 1, step: .01, lb: "abertura", uni: "%" },
+  pan:    { min: -1, max: 1, step: .01, lb: "pan", uni: "%±" },
+  tilt:   { min: -1, max: 1, step: .01, lb: "inclinação", uni: "%±" },
+  dim:    { min: 0, max: 1, step: .01, lb: "brilho", uni: "%" },
+  gobo:   { min: 0, max: GOBOS.length - 1, step: 1, lb: "gobo",
+            interp: "passo", tipo: "gobo" },
+  pos:    { min: 0, max: 1, step: .01, lb: "posição na roda", uni: "%" },
+  forca:  { min: 0, max: 1, step: .01, lb: "força", uni: "%" },
+  vento:  { min: 0, max: 1, step: .01, lb: "ventilador", uni: "%" },
 };
 export const PARAM_PADRAO = { min: 0, max: 1, step: .01 };
 
