@@ -60,18 +60,45 @@ function validarRig(rig) {
   return rig;
 }
 
+/* Valida e completa o que a edição precisa. Ids de trilha e de clip são
+   como a UI e o histórico identificam as coisas — arquivo salvo sem eles
+   (ou escrito à mão) entra completado em vez de quebrar. */
 function validarSequencia(seq) {
   exige(Array.isArray(seq), "documento sem trilhas");
+  const idsTr = new Set(), idsC = new Set();
+  let nTr = 0, nC = 0;
+  const livre = (usados, prefixo, n) => {
+    let id;
+    do { id = `${prefixo}${++n}`; } while (usados.has(id));
+    usados.add(id);
+    return { id, n };
+  };
+
   for (const tr of seq) {
     exige(tr && typeof tr.target === "string", "trilha sem alvo");
     exige(Array.isArray(tr.clips), `trilha ${tr.target} sem clips`);
+    if (typeof tr.id === "string" && tr.id && !idsTr.has(tr.id)) idsTr.add(tr.id);
     for (const c of tr.clips) {
       exige(typeof c.fx === "string", `clip sem efeito em ${tr.target}`);
       exige(Number.isFinite(c.t0) && Number.isFinite(c.t1) && c.t1 > c.t0,
         `clip com tempo inválido em ${tr.target}`);
+      if (typeof c.id === "string" && c.id && !idsC.has(c.id)) idsC.add(c.id);
     }
   }
-  return seq;
+
+  return seq.map(tr => {
+    let idTr = tr.id;
+    if (typeof idTr !== "string" || !idTr) ({ id: idTr, n: nTr } = livre(idsTr, "t", nTr));
+    return {
+      ...tr,
+      id: idTr,
+      clips: tr.clips.map(c => {
+        let idC = c.id;
+        if (typeof idC !== "string" || !idC) ({ id: idC, n: nC } = livre(idsC, "c", nC));
+        return { ...c, id: idC, p: c.p && typeof c.p === "object" ? c.p : {} };
+      }),
+    };
+  });
 }
 
 /* Migração acumulativa: cada passo sobe uma versão. Documento de v1

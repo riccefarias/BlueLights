@@ -68,6 +68,37 @@ test("sequência inválida também é recusada", () => {
 
 test("documento sem sequência cai na padrão em vez de quebrar", () => {
   const doc = desserializarDocumento({ tipo: TIPO, v: 1, rig: RIG_PADRAO });
-  assert.equal(doc.sequencia, TRACKS);
+  assert.deepEqual(doc.sequencia, TRACKS);
+  assert.notEqual(doc.sequencia, TRACKS, "cópia, pra edição não mexer na constante");
   assert.equal(doc.midia, null);
+});
+
+test("trilha e clip sem id entram completados, não quebram", () => {
+  const doc = desserializarDocumento({
+    tipo: TIPO, v: 1, rig: RIG_PADRAO,
+    sequencia: [
+      { target: "g-sup", kind: "pixel", clips: [{ fx: "wash", t0: 0, t1: 1 }] },
+      { target: "g-inf", kind: "pixel", clips: [{ fx: "chase", t0: 0, t1: 1 }] },
+    ],
+  });
+  const ids = doc.sequencia.map(tr => tr.id);
+  assert.equal(new Set(ids).size, 2, "ids de trilha únicos");
+  assert.ok(ids.every(Boolean));
+  const clips = doc.sequencia.flatMap(tr => tr.clips.map(c => c.id));
+  assert.equal(new Set(clips).size, 2, "ids de clip únicos");
+  assert.deepEqual(doc.sequencia[0].clips[0].p, {}, "clip sem parâmetros ganha objeto vazio");
+});
+
+test("id existente não é sobrescrito nem colide com o gerado", () => {
+  const doc = desserializarDocumento({
+    tipo: TIPO, v: 1, rig: RIG_PADRAO,
+    sequencia: [
+      { id: "t1", target: "g-sup", kind: "pixel", clips: [{ id: "c1", fx: "wash", t0: 0, t1: 1 }] },
+      { target: "g-inf", kind: "pixel", clips: [{ fx: "chase", t0: 0, t1: 1 }] },
+    ],
+  });
+  assert.equal(doc.sequencia[0].id, "t1");
+  assert.notEqual(doc.sequencia[1].id, "t1");
+  assert.equal(doc.sequencia[0].clips[0].id, "c1");
+  assert.notEqual(doc.sequencia[1].clips[0].id, "c1");
 });

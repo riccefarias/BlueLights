@@ -51,7 +51,8 @@ function valorUnitario(key, st, cor) {
     // 255 = aberto é o mais comum, mas há cabeça em que 255 é strobo rápido.
     // Conferir na tabela DMX antes do primeiro show com cabeça nova.
     case "shut": return 1;
-    case "color": return 0;                       // roda na posição aberta
+    // Roda de cor: 0 é a posição aberta, e é onde ela fica sem efeito nenhum.
+    case "color": return clamp01(st.color ?? 0);
     case "gobo": return goboParaByte(st.gobo || 0) / 255;
     case "grot": return grotParaByte(st.grot || 0) / 255;
     default:     return clamp01(st[key] ?? 0);    // prism, focus, fn, speed, fog, fan, pat, x, y

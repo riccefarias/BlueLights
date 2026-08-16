@@ -39,8 +39,9 @@ festcar que a luz continua. Ver `docs/03-protocolo-serial.md`.
 
 ## Estado
 
-Sequenciador funcionando em `web/`, já **exportando `.fseq` V2** e **salvando o
-setup em arquivo** — o motor roda headless e tem teste. Firmware não iniciado.
+Sequenciador funcionando em `web/`: **edita a timeline**, **exporta `.fseq` V2**
+e **salva o setup em arquivo**. O motor roda headless e tem teste.
+Firmware não iniciado.
 Próximo passo: **cadastro de fixture com faixas rotuladas**, e depois o
 firmware base (ver `docs/07-roadmap.md`).
 

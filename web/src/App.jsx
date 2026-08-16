@@ -4,7 +4,13 @@ import {
   CAP, CAT, COLOR_ORDER, GOBOS, KIND, PROFILES, RIG_PADRAO, VH, VW,
   chLb, footprint, nodesOf, sizeOf,
 } from "./modelo/rig.js";
-import { BARS, BEAT, BPM, DURATION, EFFECTS, FPS, SCENES, TRACKS } from "./modelo/sequencia.js";
+import {
+  BARS, BEAT, BPM, DURATION, EFFECTS, FPS, PARAM_META, PARAM_PADRAO, SCENES, TRACKS,
+} from "./modelo/sequencia.js";
+import {
+  acharClip, adicionarTrilha, ajustarParam, inserirClip, moverClip,
+  redimensionarClip, removerClip, removerTrilha, trocarEfeito,
+} from "./modelo/edicao.js";
 import { capsOf, derive, responders } from "./motor/derivar.js";
 import { renderFrame } from "./motor/render.js";
 import { exportarFseq } from "./motor/exportar.js";
@@ -353,18 +359,60 @@ function Stage({ rig, frame, edit, sel, onPick, onMove, chan }) {
    PAINÉIS
    ============================================================ */
 
-function Timeline({ t, sel, setSel, scrub, compact, labelFor, peaks }) {
+function Timeline({ t, tracks, sel, setSel, scrub, compact, labelFor, peaks, ed, insercao }) {
   const pct = v => `${(v / DURATION) * 100}%`;
+  const drag = useRef(null);
+
+  /* Um arrasto = um ponto de undo. O ponto é marcado no primeiro movimento
+     de verdade, não no pointerdown: senão todo clique de seleção empilha
+     estado e o Ctrl+Z passa a não fazer nada visível. */
+  const pegar = (e, ti, clip, borda) => {
+    e.stopPropagation();
+    setSel(clip.id);
+    const linha = e.currentTarget.closest(".tl-row");
+    const w = linha?.getBoundingClientRect().width || 1;
+    drag.current = { ti, id: clip.id, borda, x0: e.clientX, w,
+                     t0: clip.t0, t1: clip.t1, mexeu: false };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const arrastar = (e) => {
+    const dr = drag.current; if (!dr) return;
+    if (!dr.mexeu) {
+      if (Math.abs(e.clientX - dr.x0) < 3) return;
+      dr.mexeu = true;
+      ed.marcar();
+    }
+    // Sempre a partir do tempo original: somar delta a cada evento acumula
+    // erro e o clip escorrega debaixo do dedo.
+    const dt = ((e.clientX - dr.x0) / dr.w) * DURATION;
+    if (dr.borda) ed.redimensionar(dr.ti, dr.id, dr.borda,
+      (dr.borda === "ini" ? dr.t0 : dr.t1) + dt);
+    else ed.mover(dr.ti, dr.id, dr.t0 + dt);
+  };
+
+  const soltar = () => { drag.current = null; };
+
+  const vazioNaLinha = (e, ti) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    ed.apontar(ti, ((e.clientX - r.left) / r.width) * DURATION);
+    scrub(e);
+  };
+
   return (
     <section className={`tl ${compact ? "tl-c" : ""}`}>
       <div className="tl-gut">
         <div className="tl-sp mono">compasso</div>
-        {TRACKS.map(tr => (
-          <div key={tr.target} className="tl-lb">
+        {tracks.map((tr, ti) => (
+          <div key={tr.id} className={`tl-lb ${insercao?.ti === ti ? "alvo" : ""}`}>
             <span className={`bar ${tr.kind}`} />
             <span className="tl-lb-t">{labelFor(tr.target)}</span>
+            {!tr.clips.length && (
+              <button className="tl-x" title="Remover trilha vazia"
+                onClick={() => ed.removerTrilha(ti)}>×</button>)}
           </div>
         ))}
+        <button className="tl-add" onClick={ed.pedirTrilha}>+ trilha</button>
       </div>
       <div className="tl-scroll">
         <div className="tl-ruler" onPointerDown={scrub}>
@@ -381,16 +429,23 @@ function Timeline({ t, sel, setSel, scrub, compact, labelFor, peaks }) {
           {Array.from({ length: BARS * 4 }, (_, i) => (
             <div key={i} className="tl-beat" style={{ left: `${(i / (BARS * 4)) * 100}%` }} />))}
         </div>
-        <div className="tl-rows" onPointerDown={scrub}>
-          {TRACKS.map(tr => (
-            <div key={tr.target} className="tl-row">
+        <div className="tl-rows">
+          {tracks.map((tr, ti) => (
+            <div key={tr.id} className="tl-row" onPointerDown={e => vazioNaLinha(e, ti)}>
+              {insercao?.ti === ti && (
+                <div className="tl-ins" style={{ left: pct(insercao.t) }} />)}
               {tr.clips.map(c => (
-                <button key={c.id}
+                <div key={c.id}
                   className={`clip ${sel === c.id ? "sel" : ""} ${t >= c.t0 && t < c.t1 ? "act" : ""}`}
                   style={{ left: pct(c.t0), width: pct(c.t1 - c.t0), "--fx": EFFECTS[c.fx].color }}
-                  onPointerDown={e => { e.stopPropagation(); setSel(c.id); }}>
-                  <span>{EFFECTS[c.fx].label}</span>
-                </button>))}
+                  onPointerDown={e => pegar(e, ti, c, null)}
+                  onPointerMove={arrastar} onPointerUp={soltar} onPointerCancel={soltar}>
+                  <span className="clip-hd ini"
+                    onPointerDown={e => pegar(e, ti, c, "ini")} />
+                  <span className="clip-t">{EFFECTS[c.fx].label}</span>
+                  <span className="clip-hd fim"
+                    onPointerDown={e => pegar(e, ti, c, "fim")} />
+                </div>))}
             </div>))}
         </div>
         <div className="ph" style={{ left: pct(t) }}><span className="ph-hd" /></div>
@@ -399,46 +454,78 @@ function Timeline({ t, sel, setSel, scrub, compact, labelFor, peaks }) {
   );
 }
 
-function EffectInsp({ selClip, labelFor, d, rig }) {
-  if (!selClip) return <div className="empty">Escolha um bloco na linha do tempo.</div>;
-  const { clip, track } = selClip;
-  const caps = capsOf(track.target, d, rig);
-  return (<>
-    <div className="insp-hero" style={{ borderColor: EFFECTS[clip.fx].color }}>
-      <div className="insp-fx">{EFFECTS[clip.fx].label}</div>
-      <div className="insp-tg">{labelFor(track.target)}</div>
-    </div>
-    <div className="kv"><span>Início</span><span className="mono">{(clip.t0 / BEAT).toFixed(0)} bt</span></div>
-    <div className="kv"><span>Duração</span><span className="mono">{((clip.t1 - clip.t0) / BEAT).toFixed(0)} bt</span></div>
-    {Object.entries(clip.p).map(([k, v]) => (
-      <div key={k} className="slider">
-        <div className="slider-h"><span>{PARAM_PT[k] || k}</span><span className="mono">{Number(v).toFixed(2)}</span></div>
-        <div className="slider-tr"><div className="slider-fl" style={{ width: `${Math.min(100, Math.abs(v) * 70 + 12)}%` }} /></div>
-      </div>))}
+function EffectInsp({ selClip, insercao, tracks, labelFor, d, rig, ed }) {
+  const alvoTrilha = selClip?.track || (insercao ? tracks[insercao.ti] : null);
+  if (!alvoTrilha)
+    return <div className="empty">Escolha um bloco na linha do tempo,
+      ou toque num espaço vazio de uma trilha pra criar um.</div>;
 
-    {clip.fx === "gobos" && (
+  const caps = capsOf(alvoTrilha.target, d, rig);
+  const clip = selClip?.clip || null;
+  const inserindo = !clip && !!insercao;
+
+  return (<>
+    <div className="insp-hero" style={{ borderColor: clip ? EFFECTS[clip.fx].color : "#2E3E58" }}>
+      <div className="insp-fx">{clip ? EFFECTS[clip.fx].label : "Novo bloco"}</div>
+      <div className="insp-tg">{labelFor(alvoTrilha.target)}</div>
+    </div>
+
+    {clip ? (<>
+      <div className="kv"><span>Início</span>
+        <span className="mono">{(clip.t0 / BEAT).toFixed(2)} bt</span></div>
+      <div className="kv"><span>Duração</span>
+        <span className="mono">{((clip.t1 - clip.t0) / BEAT).toFixed(2)} bt</span></div>
+
+      {Object.entries(clip.p).map(([k, v]) => {
+        const m = PARAM_META[k] || PARAM_PADRAO;
+        return (
+          <div key={k} className="slider">
+            <div className="slider-h">
+              <span>{m.lb || k}</span><span className="mono">{Number(v).toFixed(2)}</span>
+            </div>
+            <input type="range" min={m.min} max={m.max} step={m.step} value={v}
+              aria-label={m.lb || k}
+              onPointerDown={ed.marcar}
+              onChange={e => ed.param(k, parseFloat(e.target.value))} />
+          </div>);
+      })}
+      {!Object.keys(clip.p).length &&
+        <div className="hint">Este efeito não tem parâmetro pra ajustar.</div>}
+    </>) : (
+      <div className="kv"><span>Entra em</span>
+        <span className="mono">{(insercao.t / BEAT).toFixed(2)} bt</span></div>
+    )}
+
+    {clip?.fx === "gobos" && (
       <div className="hint">Formas do catálogo: {GOBOS.slice(1).join(", ")}.
         A cor não vem daqui — vem do RGB da fixture.</div>)}
+
     <div className="sec">O que este alvo aceita</div>
     <div className="caps">
       {[...caps].map(c => <span key={c} className="cap">{CAP[c] || c}</span>)}
     </div>
+
+    <div className="sec">{inserindo ? "Criar qual efeito" : "Trocar o efeito"}</div>
     <div className="fxl">
       {Object.entries(EFFECTS).map(([k, e]) => {
-        const r = responders(k, track.target, d, rig);
+        const r = responders(k, alvoTrilha.target, d, rig);
         const cls = r.ok === 0 ? "no" : r.ok < r.total ? "part" : "yes";
         return (
-          <div key={k} className={`fxr ${cls} ${k === clip.fx ? "cur" : ""}`}>
+          <button key={k} className={`fxr ${cls} ${k === clip?.fx ? "cur" : ""}`}
+            disabled={r.ok === 0}
+            onClick={() => inserindo ? ed.inserir(k) : ed.trocar(k)}>
             <span className="fxd" style={{ background: e.color }} />
             <span className="fxn">{e.label}</span>
             <span className="mono fxc">
               {r.ok === 0 ? "—" : r.ok === r.total ? "todos" : `${r.ok}/${r.total}`}
             </span>
-          </div>);
+          </button>);
       })}
     </div>
     <div className="hint">A paleta é derivada do perfil de cada equipamento.
-      Efeito que o alvo não suporta some da lista de opções.</div>
+      Grupo misto não é erro: quem não tem a capacidade ignora aquele efeito.</div>
+
+    {clip && <button className="del" onClick={ed.remover}>Remover bloco</button>}
   </>);
 }
 
@@ -554,8 +641,6 @@ function RigList({ d, frame, sel, onPick }) {
   </>);
 }
 
-const PARAM_PT = { rate: "taxa", spread: "espalhamento", speed: "velocidade",
-  hue: "matiz", sat: "saturação", div: "divisão", range: "amplitude" };
 const MODE_LB = { palco: "Palco", mesa: "Mesa", estudio: "Estúdio" };
 
 /* Barra de arquivo. Mesma peça no Estúdio e na aba Croqui do celular,
@@ -603,6 +688,9 @@ export default function App() {
   const palco = mode === "palco", mesa = mode === "mesa", estudio = mode === "estudio";
 
   const [rig, setRig] = useState(RIG_PADRAO);
+  const [tracks, setTracks] = useState(TRACKS);
+  const [insercao, setInsercao] = useState(null);   // {ti, t} — onde criar bloco
+  const [novaTrilha, setNovaTrilha] = useState(false);
   const [view, setView] = useState("show");      // show | croqui
   const [t, setT] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -624,6 +712,8 @@ export default function App() {
   const [precisaPerm, setPrecisaPerm] = useState(false);
   const handle = useRef(null);
   const pronto = useRef(false);                  // trava autosave até o boot terminar
+  const hist = useRef({ pas: [], fut: [] });
+  const [, setHistN] = useState(0);              // só força re-render dos botões
   const raf = useRef(0), seq = useRef(100), au = useRef(makeAudio());
 
   useEffect(() => {
@@ -707,19 +797,13 @@ export default function App() {
   const d = useMemo(() => derive(rig), [rig]);
   const eff = black ? 0 : master;
   const tLuz = t + offset;
-  const frame = useMemo(() => renderFrame(d, tLuz, eff), [d, tLuz, eff]);
+  const frame = useMemo(() => renderFrame(d, tLuz, eff, tracks), [d, tLuz, eff, tracks]);
 
   const labelFor = useCallback(id =>
     d.groups.find(g => g.id === id)?.label ||
     rig.find(i => i.id === id)?.lb || id, [d, rig]);
 
-  const selClip = useMemo(() => {
-    for (const tr of TRACKS) {
-      const c = tr.clips.find(c => c.id === sel);
-      if (c) return { clip: c, track: tr };
-    }
-    return null;
-  }, [sel]);
+  const selClip = useMemo(() => acharClip(tracks, sel), [tracks, sel]);
 
   const scrub = useCallback(e => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -749,7 +833,7 @@ export default function App() {
   const exportar = useCallback(async () => {
     setExp("indo");
     try {
-      const bytes = await exportarFseq({ rig, tracks: TRACKS, offset,
+      const bytes = await exportarFseq({ rig, tracks, offset,
         midia: midia || undefined });
       const nome = (midia ? midia.replace(/\.[^.]+$/, "") : "paredao") + ".fseq";
       baixarArquivo(bytes, nome);
@@ -757,15 +841,116 @@ export default function App() {
     } catch (e) {
       setExp(`falhou: ${e.message}`);
     }
-  }, [rig, offset, midia]);
+  }, [rig, tracks, offset, midia]);
+
+  /* ---------- histórico ----------
+     Snapshot do documento, não patch de campo: com ~18 nodes e uma dúzia de
+     clips o estado inteiro são poucos KB, e guardar o anterior por completo
+     não tem como divergir do que a tela mostra. Quem chama `marcar` é sempre
+     quem está prestes a mudar algo — arrasto marca uma vez só, no primeiro
+     movimento de verdade. */
+  const LIMITE_HIST = 80;
+
+  const marcar = useCallback(() => {
+    const h = hist.current;
+    h.pas.push({ rig, tracks });
+    if (h.pas.length > LIMITE_HIST) h.pas.shift();
+    h.fut = [];
+    setHistN(n => n + 1);
+  }, [rig, tracks]);
+
+  const andar = useCallback((de, para) => {
+    const h = hist.current;
+    if (!h[de].length) return;
+    h[para].push({ rig, tracks });
+    const est = h[de].pop();
+    setRig(est.rig); setTracks(est.tracks);
+    setInsercao(null);
+    setHistN(n => n + 1);
+  }, [rig, tracks]);
+
+  const desfazer = useCallback(() => andar("pas", "fut"), [andar]);
+  const refazer = useCallback(() => andar("fut", "pas"), [andar]);
+
+  /* ---------- edição da timeline ---------- */
+
+  const ed = useMemo(() => ({
+    marcar,
+    mover: (ti, id, t0) => setTracks(ts => moverClip(ts, ti, id, t0)),
+    redimensionar: (ti, id, borda, t) =>
+      setTracks(ts => redimensionarClip(ts, ti, id, borda, t)),
+    apontar: (ti, t) => { setInsercao({ ti, t }); setSel(null); },
+    inserir: (fx) => {
+      if (!insercao) return;
+      marcar();
+      const ts = inserirClip(tracks, insercao.ti, fx, insercao.t);
+      setTracks(ts);
+      // seleciona o que acabou de nascer, pra já poder ajustar
+      const novo = ts[insercao.ti].clips.find(c =>
+        !tracks[insercao.ti].clips.some(v => v.id === c.id));
+      if (novo) { setSel(novo.id); setInsercao(null); }
+    },
+    trocar: (fx) => {
+      if (!selClip) return;
+      marcar(); setTracks(ts => trocarEfeito(ts, selClip.ti, selClip.clip.id, fx));
+    },
+    param: (k, v) => {
+      if (!selClip) return;
+      setTracks(ts => ajustarParam(ts, selClip.ti, selClip.clip.id, k, v));
+    },
+    remover: () => {
+      if (!selClip) return;
+      marcar(); setTracks(ts => removerClip(ts, selClip.ti, selClip.clip.id));
+      setSel(null);
+    },
+    removerTrilha: (ti) => { marcar(); setTracks(ts => removerTrilha(ts, ti)); },
+    pedirTrilha: () => setNovaTrilha(true),
+  }), [marcar, insercao, tracks, selClip]);
+
+  /* Alvo é grupo ou fixture solta — o motor resolve os dois igual. */
+  const alvos = useMemo(() => [
+    ...d.groups.map(g => ({ id: g.id, lb: g.label, kind: g.id === "g-heads" ? "dmx" : "pixel" })),
+    ...d.heads.map(h => ({ id: h.id, lb: h.lb, kind: "dmx" })),
+    ...d.pix.map(i => ({ id: i.id, lb: i.lb, kind: "pixel" })),
+  ], [d]);
+
+  const criarTrilha = useCallback((target, kind) => {
+    marcar();
+    setTracks(ts => adicionarTrilha(ts, target, kind));
+    setNovaTrilha(false);
+  }, [marcar]);
+
+  /* Atalhos de teclado. Não capturar quando o foco está num input:
+     Ctrl+Z dentro de um campo é do campo, não da timeline. */
+  useEffect(() => {
+    const onKey = (e) => {
+      const alvo = e.target;
+      if (alvo && (/^(INPUT|TEXTAREA|SELECT)$/.test(alvo.tagName) || alvo.isContentEditable)) return;
+      const meta = e.ctrlKey || e.metaKey;
+      if (meta && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        e.shiftKey ? refazer() : desfazer();
+      } else if (meta && e.key.toLowerCase() === "y") {
+        e.preventDefault(); refazer();
+      } else if ((e.key === "Delete" || e.key === "Backspace") && sel) {
+        e.preventDefault(); ed.remover();
+      } else if (e.key === " ") {
+        e.preventDefault(); setPlaying(pl => !pl);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [desfazer, refazer, ed, sel]);
 
   /* ---------- arquivo ---------- */
 
   const aplicarDoc = useCallback(texto => {
     const doc = desserializarDocumento(texto);   // valida tudo antes de aplicar nada
     setRig(doc.rig);
+    setTracks(doc.sequencia);
     setMidia(doc.midia);
-    setPick(null);
+    setPick(null); setInsercao(null);
+    hist.current = { pas: [], fut: [] }; setHistN(n => n + 1);
   }, []);
 
   /* Retoma o arquivo da sessão passada. O handle sobrevive no IndexedDB,
@@ -797,12 +982,12 @@ export default function App() {
     const id = setTimeout(async () => {
       setSalvo("salvando");
       try {
-        await gravar(handle.current, paraJson(serializarDocumento({ rig, midia })));
+        await gravar(handle.current, paraJson(serializarDocumento({ rig, sequencia: tracks, midia })));
         setSalvo("salvo");
       } catch (e) { setSalvo(`erro: ${e.message}`); }
     }, 700);
     return () => clearTimeout(id);
-  }, [rig, midia]);
+  }, [rig, tracks, midia]);
 
   const abrir = useCallback(async () => {
     try {
@@ -821,7 +1006,7 @@ export default function App() {
 
   const salvarComo = useCallback(async () => {
     const nome = arq || `corsa${EXTENSAO}`;
-    const texto = paraJson(serializarDocumento({ rig, midia }));
+    const texto = paraJson(serializarDocumento({ rig, sequencia: tracks, midia }));
     if (!temFSA) { baixar(texto, nome); setArq(nome); setSalvo("salvo"); return; }
     try {
       const h = await escolherDestino(nome);
@@ -835,7 +1020,7 @@ export default function App() {
     } catch (e) {
       if (e.name !== "AbortError") setSalvo(`erro: ${e.message}`);
     }
-  }, [arq, rig, midia]);
+  }, [arq, rig, tracks, midia]);
 
   const retomar = useCallback(async () => {
     const h = handle.current;
@@ -894,6 +1079,10 @@ export default function App() {
           <button className="btn btn-primary" onClick={() => setPlaying(p => !p)}
             aria-label={playing ? "Pausar" : "Tocar"}>{playing ? "❚❚" : "▶"}</button>
           <div className="tc">{tc}</div>
+          <button className="btn btn-sm" onClick={desfazer} disabled={!hist.current.pas.length}
+            title="Desfazer (Ctrl+Z)" aria-label="Desfazer">↶</button>
+          <button className="btn btn-sm" onClick={refazer} disabled={!hist.current.fut.length}
+            title="Refazer (Ctrl+Shift+Z)" aria-label="Refazer">↷</button>
           {!palco && <div className="hd-meta">
             <span><b>{BPM}</b> bpm</span><span><b>{Math.floor(t / BEAT) % 4 + 1}</b>/4</span></div>}
         </div>
@@ -929,10 +1118,27 @@ export default function App() {
             <div className="pane-t">{croqui ? "Equipamento" : "Efeito"}</div>
             {croqui
               ? <CroquiInsp item={pickItem} chan={d.chan} onEdit={editItem} onDel={delItem} onAdd={addItem} />
-              : <EffectInsp selClip={selClip} labelFor={labelFor} d={d} rig={rig} />}
+              : <EffectInsp selClip={selClip} insercao={insercao} tracks={tracks}
+                  labelFor={labelFor} d={d} rig={rig} ed={ed} />}
           </aside>
         </div>
-        <Timeline t={t} sel={sel} setSel={pickClip} scrub={scrub} labelFor={labelFor} peaks={peaks} />
+        <Timeline t={t} tracks={tracks} sel={sel} setSel={pickClip} scrub={scrub}
+          labelFor={labelFor} peaks={peaks} ed={ed} insercao={insercao} />
+      </>)}
+
+      {novaTrilha && (<>
+        <div className="scrim" onClick={() => setNovaTrilha(false)} />
+        <div className="alvos" role="dialog" aria-label="Nova trilha">
+          <div className="sec">Trilha nova pra qual alvo</div>
+          {alvos.map(a => (
+            <button key={a.id} className="alvo" onClick={() => criarTrilha(a.id, a.kind)}>
+              <span className={`bar ${a.kind}`} />
+              <span className="alvo-lb">{a.lb}</span>
+              <span className="mono dim">{a.kind}</span>
+            </button>))}
+          <div className="hint">Pode repetir alvo: cada trilha é uma camada, e no
+            DMX elas compõem por campo — varredura escreve pan, gobo escreve gobo.</div>
+        </div>
       </>)}
 
       {!estudio && (<>
@@ -968,7 +1174,8 @@ export default function App() {
 
         <div className="m-body">
           {mesa && tab !== "croqui" && tab !== "rig" &&
-            <Timeline t={t} sel={sel} setSel={pickClip} scrub={scrub} compact labelFor={labelFor} />}
+            <Timeline t={t} tracks={tracks} sel={sel} setSel={pickClip} scrub={scrub} compact
+              labelFor={labelFor} ed={ed} insercao={insercao} />}
           {palco && tab === "palco" && (
             <div className="pads">
               {SCENES.map(s => (
@@ -987,7 +1194,8 @@ export default function App() {
               </button>
             </div>)}
           {palco && tab === "linha" &&
-            <Timeline t={t} sel={sel} setSel={pickClip} scrub={scrub} compact labelFor={labelFor} />}
+            <Timeline t={t} tracks={tracks} sel={sel} setSel={pickClip} scrub={scrub} compact
+              labelFor={labelFor} ed={ed} insercao={insercao} />}
           {tab === "croqui" && (
             <div className="m-croqui">
               {barraArquivo(true)}
@@ -1000,11 +1208,13 @@ export default function App() {
             </div>)}
         </div>
 
-        {sheet && view !== "croqui" && (<>
-          <div className="scrim" onClick={() => setSheet(false)} />
+        {(sheet || insercao) && view !== "croqui" && (<>
+          <div className="scrim" onClick={() => { setSheet(false); setInsercao(null); }} />
           <div className="sheet" role="dialog" aria-label="Efeito">
-            <button className="sheet-grab" onClick={() => setSheet(false)} aria-label="Fechar" />
-            <EffectInsp selClip={selClip} labelFor={labelFor} d={d} rig={rig} />
+            <button className="sheet-grab" aria-label="Fechar"
+              onClick={() => { setSheet(false); setInsercao(null); }} />
+            <EffectInsp selClip={selClip} insercao={insercao} tracks={tracks}
+                  labelFor={labelFor} d={d} rig={rig} ed={ed} />
           </div>
         </>)}
       </>)}
@@ -1089,8 +1299,13 @@ button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .kv .mono{color:var(--ink)}
 .slider{padding:8px 13px 4px}
 .slider-h{display:flex;justify-content:space-between;font-size:10.5px;color:var(--chrome);margin-bottom:5px}
-.slider-tr{height:3px;border-radius:2px;background:#1A2434;overflow:hidden}
-.slider-fl{height:100%;background:var(--blue)}
+.slider input{width:100%;height:18px;-webkit-appearance:none;background:transparent}
+.slider input::-webkit-slider-runnable-track{height:3px;border-radius:2px;background:#1A2434}
+.slider input::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;margin-top:-6px;
+  border-radius:50%;background:var(--blue);border:2px solid #0B111C}
+.slider input::-moz-range-track{height:3px;border-radius:2px;background:#1A2434}
+.slider input::-moz-range-thumb{width:13px;height:13px;border-radius:50%;
+  background:var(--blue);border:2px solid #0B111C}
 .empty{padding:0 13px;font-size:11.5px;color:var(--chrome);line-height:1.55}
 
 .palette{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:0 13px 13px}
@@ -1133,8 +1348,30 @@ button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .clip{position:absolute;top:3px;height:21px;border-radius:5px;
   background:color-mix(in srgb,var(--fx) 17%,#0E1420);
   border:1px solid color-mix(in srgb,var(--fx) 48%,transparent);border-left:2px solid var(--fx);
-  display:flex;align-items:center;padding:0 6px;overflow:hidden;transition:.12s}
-.clip span{font-size:10px;color:#C6D3E6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  display:flex;align-items:center;overflow:hidden;transition:background .12s,box-shadow .12s;
+  cursor:grab;touch-action:none;user-select:none}
+.clip:active{cursor:grabbing}
+.clip-t{flex:1;font-size:10px;color:#C6D3E6;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;padding:0 2px;pointer-events:none}
+.clip-hd{flex:0 0 9px;align-self:stretch;cursor:ew-resize;touch-action:none}
+.clip-hd:hover{background:color-mix(in srgb,var(--fx) 55%,transparent)}
+.tl-ins{position:absolute;top:0;bottom:0;width:2px;background:#6FD3B4;
+  box-shadow:0 0 8px rgba(111,211,180,.8);pointer-events:none}
+.tl-lb.alvo{background:#0B1A18;border-left:2px solid #6FD3B4}
+.tl-x{margin-left:auto;padding:0 5px;font-size:13px;line-height:1;color:#4A5B77;border-radius:4px}
+.tl-x:hover{color:#FF7A9C;background:#1B0E14}
+.tl-add{display:block;width:100%;padding:7px 10px;text-align:left;font-size:10.5px;
+  font-weight:600;color:var(--chrome);border-top:1px solid var(--line2)}
+.tl-add:hover{background:#111A28;color:#8FB4FF}
+.btn-sm{min-width:30px;height:30px;font-size:13px}
+.alvos{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:7;
+  width:min(320px,90vw);max-height:70%;overflow-y:auto;background:var(--panel);
+  border:1px solid var(--line);border-radius:14px;padding-bottom:12px;
+  box-shadow:0 18px 50px rgba(0,0,0,.6)}
+.alvo{display:flex;align-items:center;gap:8px;width:100%;padding:9px 13px;
+  text-align:left;font-size:11.5px;color:#9FADC2}
+.alvo:hover{background:#152136;color:var(--ink)}
+.alvo-lb{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .clip.act{box-shadow:0 0 13px color-mix(in srgb,var(--fx) 42%,transparent)}
 .clip.sel{border-color:var(--fx);background:color-mix(in srgb,var(--fx) 32%,#0E1420)}
 .clip.sel span{color:#fff}
@@ -1210,8 +1447,10 @@ button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .cap{padding:3px 7px;border-radius:5px;background:#101A2B;border:1px solid #1E2C44;
   font-size:9.5px;color:#8FA3C2}
 .fxl{margin:0 13px;border-radius:8px;border:1px solid var(--line);overflow:hidden}
-.fxr{display:flex;align-items:center;gap:8px;padding:6px 9px;font-size:10.5px;
-  background:#0B111C;border-bottom:1px solid #131C2A}
+.fxr{display:flex;align-items:center;gap:8px;padding:7px 9px;font-size:10.5px;width:100%;
+  text-align:left;background:#0B111C;border-bottom:1px solid #131C2A;transition:.12s}
+.fxr:not(:disabled):hover{background:#152136}
+.fxr:disabled{cursor:default}
 .fxr:last-child{border-bottom:none}
 .fxr.no{opacity:.3}
 .fxr.cur{background:#122140}

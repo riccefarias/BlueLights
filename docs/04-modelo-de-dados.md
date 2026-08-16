@@ -46,6 +46,7 @@ Nunca armazenados — sempre calculados do croqui:
 
 ```json
 {
+  "id": "t2",
   "target": "g-sup",
   "kind": "pixel",
   "clips": [
@@ -56,6 +57,12 @@ Nunca armazenados — sempre calculados do croqui:
 ```
 
 `target` é id de fixture **ou** de grupo. O motor resolve.
+
+O `id` da trilha existe porque duas trilhas podem apontar pro mesmo alvo — é
+assim que varredura e gobo convivem nas mesmas heads. Arquivo salvo sem ids
+entra completado ao carregar.
+
+Como se edita isso: [10-edicao-da-timeline.md](10-edicao-da-timeline.md).
 
 ## Composição
 

@@ -53,7 +53,8 @@ Detecção de BPM, marcadores editáveis, zoom.
 
 ### 6. Value curves
 
-Animar qualquer parâmetro ao longo do clip.
+Animar qualquer parâmetro ao longo do clip. Hoje o parâmetro é um número fixo
+por clip; a curva é o que separa show bom de pisca-pisca.
 
 ## Já feito
 
@@ -65,6 +66,9 @@ Animar qualquer parâmetro ao longo do clip.
 - Relógio master no AudioContext
 - **Exportador `.fseq` V2 com zlib**, e o motor separado em `motor/` +
   `modelo/` pra rodar headless. Teste automatizado com `npm test`
+- **Edição da timeline**: arrastar, redimensionar, criar, apagar, trocar
+  efeito, parâmetro em slider, trilha nova, e undo/redo. Ver
+  `10-edicao-da-timeline.md`
 - **Salvar e carregar** o setup em `.blz.json`, com arquivo de verdade no
   desktop e load manual no celular. Ver ADR 0009
 

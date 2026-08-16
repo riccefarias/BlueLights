@@ -55,5 +55,19 @@ export function renderDmxFx(fx, p, tL, tG) {
     return { pan: 0, gobo: 0, dim: Math.exp((-(tG % per) / per) * 7),
              rgb: hsv(p.hue ?? 0, p.sat ?? 0, 1) };
   }
+  /* Roda de cor: posição fixa, ou girando quando `div` > 0. Diferente do
+     RGB — aqui a cor vem de um filtro físico, não de misturar emissor. */
+  if (fx === "wheel") {
+    const div = p.div ?? 0;
+    if (div <= 0) return { color: p.pos ?? .3 };
+    const per = BEAT / div;
+    return { color: (tG % per) / per };
+  }
+  if (fx === "prisma") return { prism: p.forca ?? 1 };
+  if (fx === "jato") return { fog: p.forca ?? 1, fan: p.vento ?? .5 };
+  if (fx === "lsweep") {
+    const a = tG * Math.PI * 2 * (p.rate ?? .5), r = p.range ?? .8;
+    return { x: .5 + Math.sin(a) * r * .5, y: .5 + Math.cos(a * .5) * r * .5 };
+  }
   return {};
 }

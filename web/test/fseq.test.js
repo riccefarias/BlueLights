@@ -6,7 +6,8 @@ import { conferirRig, escreverFseq, lerFseq, quadroDe, quadrosPorBloco } from ".
 import { exportarFseq, renderizarSequencia } from "../src/motor/exportar.js";
 import { derive, impressaoDoRig } from "../src/motor/derivar.js";
 import { RIG_PADRAO } from "../src/modelo/rig.js";
-import { DURATION, FPS } from "../src/modelo/sequencia.js";
+import { BEAT, DURATION, FPS, TRACKS } from "../src/modelo/sequencia.js";
+import { ajustarParam, removerClip } from "../src/modelo/edicao.js";
 
 const ID = 0x0123456789ABCDEFn;
 
@@ -190,4 +191,29 @@ test("o exportador recusa o que não cabe no formato", async () => {
   await assert.rejects(() => escreverFseq({ canais: 10, quadros: 2,
     dados: new Uint8Array(20), compressao: "zstd" }), /zstd/);
   await assert.rejects(() => lerFseq(new Uint8Array(64)), /não é um arquivo fseq/);
+});
+
+test("editar a timeline muda o que sai no .fseq", async () => {
+  const base = await lerFseq(await exportarFseq());
+  const editado = await lerFseq(await exportarFseq({
+    tracks: ajustarParam(TRACKS, 1, "c3", "hue", 0.05),   // corrida de azul pra vermelho
+  }));
+  assert.equal(base.canais, editado.canais);
+  assert.equal(base.quadros, editado.quadros);
+  assert.notDeepEqual([...base.dados], [...editado.dados],
+    "mexer no clip tem que aparecer nos bytes");
+
+  // e o croqui não mudou, então o carimbo continua o mesmo
+  assert.equal(base.rig.fp, editado.rig.fp);
+});
+
+test("remover um clip apaga a luz daquele trecho", async () => {
+  const semStrobo = removerClip(TRACKS, 1, "c4");        // strobo do beat 24 ao 32
+  const seq = await lerFseq(await exportarFseq({ tracks: semStrobo }));
+  const cheio = await lerFseq(await exportarFseq());
+  const q = Math.round(BEAT * 26 * FPS);                 // dentro do trecho removido
+  const canaisSup = [...quadroDe(seq, q).subarray(0, 27)];   // f1..f3, caixa superior
+  assert.ok(canaisSup.every(v => v === 0), "caixa superior apagada sem o clip");
+  assert.ok([...quadroDe(cheio, q).subarray(0, 27)].some(v => v > 0),
+    "e acesa com ele — senão o teste não prova nada");
 });
