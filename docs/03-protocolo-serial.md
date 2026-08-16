@@ -32,6 +32,29 @@ Wifi fica como conveniência futura; a serial é o caminho confiável.
 **Nunca escrever no SD durante playback.** Cartão faz wear leveling e apagamento de
 bloco, gerando stalls de centenas de ms sem aviso. Bloquear upload com transporte ativo.
 
+## Moldura de pacote
+
+Implementada em `firmware/core/protocolo.{h,c}`, com testes de host — a
+moldura abaixo é o contrato byte a byte, little-endian:
+
+```
+0xB7 0x4C | tipo u8 | len u16 | payload[len] | crc32 u32
+```
+
+O CRC32 (IEEE, o mesmo do zlib) cobre `tipo + len + payload` e existe
+porque a ponte CH9102 não detecta erro nenhum. O parser ressincroniza
+avançando **um byte** sobre o que não fecha — nunca jogando o buffer fora —
+então um magic verdadeiro escondido atrás de lixo corrompido ainda é
+achado, e byte ruim derruba um pacote, não a sessão. Payload máximo: 8KB
+(o chunk do upload).
+
+Tipos, mídia → placa: `0x01 OI`, `0x02 LISTA`, `0x03 COMECA` (nome NUL +
+u32 tamanho + u32 crc do arquivo; ACK devolve u32 offset de resume),
+`0x04 DADO` (u32 offset + bytes), `0x05 FIM` (valida CRC inteiro e
+renomeia o .tmp), `0x06 APAGA`, `0x07 TEMPO` (u32 ms de timecode),
+`0x08 TOCA`. Placa → mídia: `0x81 ACK` (tipo ecoado + código + extra),
+`0x82 MANIFESTO` (o index.json).
+
 ## Upload
 
 - Chunks de 4–8KB com tamanho no header e ACK por chunk

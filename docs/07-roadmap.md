@@ -113,6 +113,13 @@ mesma tabela DMX.
 A T-CAN485 traz um barramento **CAN** que ninguém pediu. Não usar agora, mas é
 a porta pra luz reagir a RPM, porta aberta ou farol alto um dia.
 
+E vira espinha de subsistemas: mais de uma T-CAN485 no mesmo par trançado
+(transceiver já na placa, $12 cada, terminador de 120Ω nas duas pontas) é uma
+rede de nós baratos — máquina de fumaça reportando heater, sensores, o que
+surgir. Existe a sucessora **T-2CAN** (ESP32-S3, 16MB flash, 8MB PSRAM, CAN
+duplo **isolado**), mas ela veio **sem RS485 e sem slot SD** — não substitui a
+T-CAN485 como cabeça do show; serve no máximo como nó/gateway um dia.
+
 E traz **Bluetooth 4.2** (Classic + BLE) no ESP32: shining masks, bonés de LED
 e afins podem virar fixture controlada por evento. Anotado com protocolos e
 ressalvas em [12-bluetooth-ble.md](12-bluetooth-ble.md) — testar no futuro,
@@ -159,4 +166,7 @@ canais saem no cabo sem esperar o firmware da T-CAN485.
 - [ ] Levantar a tabela DMX de cada uma das 3 heads
 - [ ] **Decidir a isolação do DMX** — a T-CAN485 não isola. Módulo ADM2582E
       por fora ou terra único bem feito? Ver ADR 0010
-- [ ] Confirmar flash e PSRAM da unidade que chegou (o ADR assume sem PSRAM)
+- [ ] Confirmar flash e PSRAM da unidade que chegou com `esptool flash_id`.
+      Pela ficha de fábrica (pesquisado 2026-08): **ESP-WROOM-32E, 4MB de
+      flash, sem PSRAM** — a premissa do ADR 0010 confirma de fábrica; o
+      flash_id só valida a unidade física
