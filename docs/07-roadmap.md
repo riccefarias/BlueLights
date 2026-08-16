@@ -126,6 +126,19 @@ Nenhuma importa nos ~18 nodes atuais:
 - Render em Web Worker
 - Se um dia for wifi: **ESP32-C5** é dual-band e sai do 2.4GHz saturado
 
+## Bancada (antes do firmware grande)
+
+Os strobos chegam primeiro e tem um ESP32 comum na gaveta: virou a bancada.
+`firmware/bancada` é uma ponte USB→DMX no protocolo Enttec, e o sequenciador
+ganhou o botão **DMX** (Web Serial, desktop) — show e mesa de canais saem no
+cabo sem esperar o firmware da T-CAN485. É também a ferramenta de levantar
+tabela DMX de aparelho sem manual.
+
+- [ ] Comprar módulo MAX485 (ou ADM2582E, já isolado) + XLR fêmea
+- [ ] Gravar `firmware/bancada` no ESP32 da gaveta
+- [ ] Strobo no cabo: descobrir os canais reais com a mesa e corrigir o
+      perfil `stb-2`
+
 ## Antes de comprar / montar
 
 - [ ] Testar 1 vs 3 endereços por farol AJK

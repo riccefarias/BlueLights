@@ -18,6 +18,7 @@ import { capsOf, derive, responders } from "./motor/derivar.js";
 import { renderFrame } from "./motor/render.js";
 import { serializarFrame } from "./motor/canais.js";
 import { atropelos } from "./motor/atropelo.js";
+import { ligarDmx, temSerial } from "./ui/serial.js";
 import { exportarFseq } from "./motor/exportar.js";
 import {
   EXTENSAO, desserializarDocumento, paraJson, serializarDocumento,
@@ -938,7 +939,7 @@ const MODE_LB = { palco: "Palco", mesa: "Mesa", estudio: "Estúdio" };
 
 /* Barra de arquivo. Mesma peça no Estúdio e na aba Croqui do celular,
    porque o croqui é editável nos dois e perder edição é igual nos dois. */
-function BarraArquivo({ nome, estado, precisaPerm, onAbrir, onSalvar, onRetomar, compact }) {
+function BarraArquivo({ nome, estado, precisaPerm, onAbrir, onSalvar, onRetomar, dmxOn, onDmx, compact }) {
   const rotulo = { salvando: "salvando…", salvo: "salvo", sujo: "não salvo",
                    rascunho: "rascunho guardado" }[estado] || estado;
   const cor = estado === "salvo" || estado === "rascunho" ? "chip-ok"
@@ -961,6 +962,11 @@ function BarraArquivo({ nome, estado, precisaPerm, onAbrir, onSalvar, onRetomar,
       <button className="ar-b" onClick={onSalvar}>
         {temFSA ? "Salvar como" : "Baixar"}
       </button>
+      {temSerial && (
+        <button className={`ar-b ${dmxOn ? "on" : ""}`} onClick={onDmx}
+          title="Bancada: manda o que está tocando (ou a mesa) como DMX pela USB — precisa do firmware/bancada num ESP32">
+          {dmxOn ? "DMX ●" : "DMX"}
+        </button>)}
     </div>
   );
 }
@@ -1181,6 +1187,28 @@ export default function App() {
     return { ...frame, heads };
   }, [frame, manual, rig]);
   const bytes = useMemo(() => serializarFrame(d, frameFinal), [d, frameFinal]);
+
+  /* ---------- DMX ao vivo pela USB (bancada) ----------
+     O tique da serial lê o ref, não o estado: reabrir a porta a cada
+     quadro renderizado seria loucura; o ref sempre tem o quadro atual. */
+  const bytesRef = useRef(bytes);
+  bytesRef.current = bytes;
+  const [dmxOn, setDmxOn] = useState(false);
+  const dmxHandle = useRef(null);
+  const alternarDmx = useCallback(async () => {
+    if (dmxHandle.current) {
+      dmxHandle.current.parar();
+      dmxHandle.current = null;
+      setDmxOn(false);
+      return;
+    }
+    try {
+      dmxHandle.current = await ligarDmx(
+        () => bytesRef.current,
+        () => { dmxHandle.current = null; setDmxOn(false); });
+      setDmxOn(true);
+    } catch {}                     // cancelou o diálogo de porta: sem drama
+  }, []);
 
   const labelFor = useCallback(id =>
     d.groups.find(g => g.id === id)?.label ||
@@ -1483,7 +1511,8 @@ export default function App() {
 
   const barraArquivo = (compact) => (
     <BarraArquivo nome={arq} estado={salvo} precisaPerm={precisaPerm}
-      onAbrir={abrir} onSalvar={salvarComo} onRetomar={retomar} compact={compact} />
+      onAbrir={abrir} onSalvar={salvarComo} onRetomar={retomar}
+      dmxOn={dmxOn} onDmx={alternarDmx} compact={compact} />
   );
 
   const croqui = view === "croqui";
