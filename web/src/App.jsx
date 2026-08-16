@@ -8,6 +8,13 @@ import { BARS, BEAT, BPM, DURATION, EFFECTS, FPS, SCENES, TRACKS } from "./model
 import { capsOf, derive, responders } from "./motor/derivar.js";
 import { renderFrame } from "./motor/render.js";
 import { exportarFseq } from "./motor/exportar.js";
+import {
+  EXTENSAO, desserializarDocumento, paraJson, serializarDocumento,
+} from "./modelo/documento.js";
+import {
+  abrirComInput, abrirComPicker, baixar, escolherDestino, esquecerHandle,
+  gravar, handleLembrado, podeEscrever, temFSA,
+} from "./ui/arquivo.js";
 /* ============================================================
    PALCO — um canvas, dois modos de desenho.
    ============================================================ */
@@ -551,6 +558,33 @@ const PARAM_PT = { rate: "taxa", spread: "espalhamento", speed: "velocidade",
   hue: "matiz", sat: "saturação", div: "divisão", range: "amplitude" };
 const MODE_LB = { palco: "Palco", mesa: "Mesa", estudio: "Estúdio" };
 
+/* Barra de arquivo. Mesma peça no Estúdio e na aba Croqui do celular,
+   porque o croqui é editável nos dois e perder edição é igual nos dois. */
+function BarraArquivo({ nome, estado, precisaPerm, onAbrir, onSalvar, onRetomar, compact }) {
+  const rotulo = { salvando: "salvando…", salvo: "salvo", sujo: "não salvo" }[estado] || estado;
+  const cor = estado === "salvo" ? "chip-ok" : estado === "sujo" ? "chip-warn" : "";
+  return (
+    <div className={`ar ${compact ? "ar-c" : ""}`}>
+      {precisaPerm ? (
+        <button className="ar-b on" onClick={onRetomar}
+          title="O browser não guarda a permissão de escrita entre sessões">
+          continuar em {nome}
+        </button>
+      ) : (
+        <span className={`chip ${cor}`}
+          title={temFSA ? "gravando no arquivo vinculado"
+                        : "este browser não dá acesso a arquivo — salve baixando"}>
+          {nome ? `${nome} · ` : ""}{rotulo}
+        </span>
+      )}
+      <button className="ar-b" onClick={onAbrir}>Abrir</button>
+      <button className="ar-b" onClick={onSalvar}>
+        {temFSA ? "Salvar como" : "Baixar"}
+      </button>
+    </div>
+  );
+}
+
 /* Único ponto do exportador que toca o DOM — o resto roda headless. */
 function baixarArquivo(bytes, nome) {
   const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
@@ -585,6 +619,11 @@ export default function App() {
   const [peaks, setPeaks] = useState(null);
   const [midia, setMidia] = useState(null);
   const [exp, setExp] = useState(null);          // null | "indo" | texto do resultado
+  const [arq, setArq] = useState(null);          // nome do arquivo vinculado
+  const [salvo, setSalvo] = useState("salvo");   // salvo | sujo | salvando | erro
+  const [precisaPerm, setPrecisaPerm] = useState(false);
+  const handle = useRef(null);
+  const pronto = useRef(false);                  // trava autosave até o boot terminar
   const raf = useRef(0), seq = useRef(100), au = useRef(makeAudio());
 
   useEffect(() => {
@@ -720,6 +759,105 @@ export default function App() {
     }
   }, [rig, offset, midia]);
 
+  /* ---------- arquivo ---------- */
+
+  const aplicarDoc = useCallback(texto => {
+    const doc = desserializarDocumento(texto);   // valida tudo antes de aplicar nada
+    setRig(doc.rig);
+    setMidia(doc.midia);
+    setPick(null);
+  }, []);
+
+  /* Retoma o arquivo da sessão passada. O handle sobrevive no IndexedDB,
+     a permissão não — sem ela, `pronto` fica falso de propósito, senão o
+     autosave gravaria o rig padrão por cima do trabalho salvo. */
+  useEffect(() => {
+    (async () => {
+      const h = await handleLembrado();
+      if (h) {
+        handle.current = h;
+        setArq(h.name);
+        if (await podeEscrever(h)) {
+          try { aplicarDoc(await (await h.getFile()).text()); setSalvo("salvo"); }
+          catch (e) { setSalvo(`erro: ${e.message}`); }
+        } else {
+          setPrecisaPerm(true);
+          return;                                 // sem autosave até reconceder
+        }
+      }
+      pronto.current = true;
+    })();
+  }, [aplicarDoc]);
+
+  // Autosave com folga: gravar a cada pixel arrastado torra o disco à toa.
+  useEffect(() => {
+    if (!pronto.current) return;
+    if (!handle.current) { setSalvo("sujo"); return; }
+    setSalvo("sujo");
+    const id = setTimeout(async () => {
+      setSalvo("salvando");
+      try {
+        await gravar(handle.current, paraJson(serializarDocumento({ rig, midia })));
+        setSalvo("salvo");
+      } catch (e) { setSalvo(`erro: ${e.message}`); }
+    }, 700);
+    return () => clearTimeout(id);
+  }, [rig, midia]);
+
+  const abrir = useCallback(async () => {
+    try {
+      const r = temFSA ? await abrirComPicker() : await abrirComInput();
+      if (!r) return;
+      aplicarDoc(r.texto);                        // se o arquivo for inválido, para aqui
+      handle.current = r.handle;
+      setArq(r.nome);
+      setPrecisaPerm(false);
+      pronto.current = true;
+      setSalvo(r.handle ? "salvo" : "sujo");
+    } catch (e) {
+      if (e.name !== "AbortError") setSalvo(`erro: ${e.message}`);
+    }
+  }, [aplicarDoc]);
+
+  const salvarComo = useCallback(async () => {
+    const nome = arq || `corsa${EXTENSAO}`;
+    const texto = paraJson(serializarDocumento({ rig, midia }));
+    if (!temFSA) { baixar(texto, nome); setArq(nome); setSalvo("salvo"); return; }
+    try {
+      const h = await escolherDestino(nome);
+      handle.current = h;
+      setArq(h.name);
+      setPrecisaPerm(false);
+      pronto.current = true;
+      setSalvo("salvando");
+      await gravar(h, texto);
+      setSalvo("salvo");
+    } catch (e) {
+      if (e.name !== "AbortError") setSalvo(`erro: ${e.message}`);
+    }
+  }, [arq, rig, midia]);
+
+  const retomar = useCallback(async () => {
+    const h = handle.current;
+    if (!h) return;
+    if (!(await podeEscrever(h, true))) {        // negou: solta o vínculo
+      await esquecerHandle();
+      handle.current = null; setArq(null); setPrecisaPerm(false); pronto.current = true;
+      return;
+    }
+    try {
+      aplicarDoc(await (await h.getFile()).text());
+      setPrecisaPerm(false);
+      pronto.current = true;
+      setSalvo("salvo");
+    } catch (e) { setSalvo(`erro: ${e.message}`); }
+  }, [aplicarDoc]);
+
+  const barraArquivo = (compact) => (
+    <BarraArquivo nome={arq} estado={salvo} precisaPerm={precisaPerm}
+      onAbrir={abrir} onSalvar={salvarComo} onRetomar={retomar} compact={compact} />
+  );
+
   const croqui = view === "croqui";
   const pickItem = rig.find(i => i.id === pick) || null;
 
@@ -781,6 +919,7 @@ export default function App() {
           <main className="pv">
             <div className="pv-head">
               {viewToggle}
+              {barraArquivo()}
               <AudioBar A={au.current} hasFile={hasFile} onFile={loadFile}
                 click={click} setClick={setClick} offset={offset} setOffset={setOffset} />
             </div>
@@ -851,6 +990,7 @@ export default function App() {
             <Timeline t={t} sel={sel} setSel={pickClip} scrub={scrub} compact labelFor={labelFor} />}
           {tab === "croqui" && (
             <div className="m-croqui">
+              {barraArquivo(true)}
               <CroquiInsp item={pickItem} chan={d.chan} onEdit={editItem} onDel={delItem} onAdd={addItem} />
             </div>)}
           {tab === "rig" && (
@@ -906,7 +1046,15 @@ button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .chip-blue{color:#8FB4FF;border-color:#1D2E52;background:#0E1830}
 .chip-amber{color:#FFC97A;border-color:#3D2E14;background:#1E1608}
 .chip-ok{color:#6FD3B4;border-color:#14382E;background:#081A15}
+.chip-warn{color:#FFC97A;border-color:#3D2E14;background:#1E1608}
 .btn:disabled{opacity:.5;cursor:progress}
+.ar{display:flex;align-items:center;gap:6px;min-width:0}
+.ar .chip{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px}
+.ar-b{padding:5px 10px;border-radius:7px;background:#0D1420;border:1px solid var(--line);
+  font-size:10.5px;font-weight:600;color:var(--chrome);white-space:nowrap;transition:.13s}
+.ar-b:hover{background:#152136;color:var(--ink)}
+.ar-b.on{background:#122140;border-color:var(--blue);color:#8FB4FF}
+.ar-c{padding:0 13px 12px;flex-wrap:wrap}
 
 .body{flex:1;display:grid;grid-template-columns:206px 1fr 226px;min-height:0}
 .pane-t{font-family:'Archivo',sans-serif;font-size:9.5px;font-weight:700;letter-spacing:.19em;
