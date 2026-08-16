@@ -1,5 +1,6 @@
 /* ============================================================
-   BANCADA — ESP32 comum vira a saída do sequenciador.
+   BANCADA — a placa da gaveta vira a saída do sequenciador.
+   (ESP32 comum: pixel + DMX. NodeMCU v3/ESP8266: só pixel.)
 
    Não é o firmware do show (esse é o da T-CAN485, com SD e fseq).
    Isto é a bancada: o sequenciador manda quadros pela serial USB e
@@ -28,16 +29,30 @@
 
    Bibliotecas: esp_dmx (Mitch Weisbrod, série 4.1.x) e
    Adafruit NeoPixel. Serial a 921600 (CH340/CP2102 aguentam).
+
+   O MESMO sketch compila pra NodeMCU v3 (ESP8266): sai só a saída
+   DMX (esp_dmx é ESP32-only) — a de pixel, que é a que os faróis
+   usam, fica inteira. Pino de dado: D2, que É o GPIO4. Cuidado do
+   8266: o show() da NeoPixel desliga interrupção — com poucos nodes
+   (bancada) é invisível; corrente longa começaria a comer bytes da
+   serial.
    ============================================================ */
 
 #include <Arduino.h>
-#include <esp_dmx.h>
 #include <Adafruit_NeoPixel.h>
+#if defined(ESP32)
+#include <esp_dmx.h>
+#else
+#define DMX_PACKET_SIZE 513
+#endif
 
-const int PIN_TX = 17, PIN_RX = 16, PIN_EN = 21, PIN_LED = 2;
-const int PIN_PIXEL = 4;
+const int PIN_LED = 2;             // no NodeMCU é o LED da placa (aceso em LOW)
+const int PIN_PIXEL = 4;           // ESP32: GPIO4 | NodeMCU: D2 (mesmo GPIO4)
 const long BAUD = 921600;
+#if defined(ESP32)
+const int PIN_TX = 17, PIN_RX = 16, PIN_EN = 21;
 const dmx_port_t DMX = DMX_NUM_1;
+#endif
 
 /* Quantos nodes tem no cabo AGORA (1 farol de 3 nodes = 3). No app,
    deixa a ordem de cor da fixture em RGB e ajusta a ordem AQUI — senão
@@ -51,13 +66,15 @@ int tamanho = 513;                 // start code + 512 canais
 uint32_t ultimoDado = 0;
 
 void setup() {
+  Serial.setRxBufferSize(2048);    // antes do begin — no ESP32 depois não vale
   Serial.begin(BAUD);
-  Serial.setRxBufferSize(2048);
   pinMode(PIN_LED, OUTPUT);
 
+#if defined(ESP32)
   dmx_config_t cfg = DMX_CONFIG_DEFAULT;
   dmx_driver_install(DMX, &cfg, NULL, 0);
   dmx_set_pin(DMX, PIN_TX, PIN_RX, PIN_EN);
+#endif
 
   fita.begin();
   fita.show();                     // tudo apagado até chegar quadro
@@ -113,12 +130,25 @@ void loop() {
   /* Manda sempre, com ou sem dado novo: DMX é fita rolante, aparelho
      que fica 1s sem quadro entra em modo próprio. O pixel pega carona
      na mesma cadência (~30fps, limitada pelo quadro DMX de 513ch). */
+#if defined(ESP32)
   dmx_write(DMX, quadro, tamanho);
   dmx_send_num(DMX, tamanho);
   dmx_wait_sent(DMX, DMX_TIMEOUT_TICK);
   mostraPixels();
+#else
+  /* Sem DMX segurando o ritmo, quem dá a cadência é o relógio. */
+  static uint32_t proximo = 0;
+  if ((int32_t)(millis() - proximo) >= 0) {
+    proximo = millis() + 33;       // ~30fps, igual ao lado ESP32
+    mostraPixels();
+  }
+#endif
 
   // LED aceso = recebendo do sequenciador; piscando = segurando o último quadro
   bool vivo = millis() - ultimoDado < 2000;
-  digitalWrite(PIN_LED, vivo ? HIGH : (millis() / 400) % 2);
+  int led = vivo ? HIGH : (millis() / 400) % 2;
+#if !defined(ESP32)
+  led = !led;                      // o LED do NodeMCU acende em LOW
+#endif
+  digitalWrite(PIN_LED, led);
 }

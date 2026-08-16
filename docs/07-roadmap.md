@@ -147,14 +147,18 @@ Nenhuma importa nos ~18 nodes atuais:
 ## Bancada (antes do firmware grande)
 
 Os strobos — faróis RGB **endereçáveis**, corrente de pixel — chegam
-primeiro, e tem um ESP32 comum na gaveta: virou a bancada. `firmware/bancada`
+primeiro, e a placa da gaveta virou a bancada. Vista de perto ela é um
+**NodeMCU v3 (ESP8266)**, não ESP32 — pro caminho de pixel tanto faz (o
+sketch compila pras duas), só a saída DMX que espera um ESP32 ou a própria
+T-CAN485. `firmware/bancada`
 recebe quadros do browser no protocolo Enttec e tem duas saídas: corrente de
 pixel por RMT (os faróis) e DMX pelo MAX485 (as cabeças, depois). O
 sequenciador ganhou o botão **DMX** (Web Serial, desktop) — show e mesa de
 canais saem no cabo sem esperar o firmware da T-CAN485.
 
 - [ ] Fonte 5V pros faróis (e 74HCT125 se o dado a 3.3V não segurar)
-- [ ] Gravar `firmware/bancada` no ESP32 da gaveta
+- [ ] Gravar `firmware/bancada` no NodeMCU v3 da gaveta (core ESP8266,
+      dado no D2; detalhes no README da bancada)
 - [ ] Farol no cabo: fecha os três testes de uma vez — 400 vs 800kHz,
       1 vs 3 endereços por farol, ordem de cor
 - [ ] Pras cabeças depois: módulo MAX485 (ou ADM2582E, já isolado) + XLR.

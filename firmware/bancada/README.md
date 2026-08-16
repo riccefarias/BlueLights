@@ -1,9 +1,26 @@
-# Bancada — ESP32 comum vira a saída do sequenciador
+# Bancada — a placa da gaveta vira a saída do sequenciador
 
 Ponte USB→luz pra testar aparelho de verdade antes do firmware grande da
 T-CAN485 existir. O sequenciador conecta pelo botão **DMX** (Chrome/Edge de
 desktop, Web Serial) e o que estiver tocando — show ou mesa de canais — sai
 no cabo.
+
+## A placa da gaveta é um NodeMCU v3 (ESP8266) — serve?
+
+**Pros faróis, serve inteira.** O mesmo sketch compila pra ela; só a saída
+DMX fica de fora (a lib esp_dmx é ESP32-only), e cabeça DMX é fase 2 de
+qualquer jeito — quando chegar, ou aparece um ESP32 de verdade ou já é a
+própria T-CAN485. O que muda gravando num NodeMCU:
+
+- Arduino IDE com o core **ESP8266** (boards manager), placa
+  "NodeMCU 1.0 (ESP-12E Module)"
+- Dado do pixel no **D2** — que é exatamente o GPIO4, mesmo número do ESP32
+- O aviso "use 9600bps" no verso é do echo de fábrica; gravado o sketch, o
+  CH340 segura os 921600 numa boa
+- Ressalva única: no 8266 o `show()` da NeoPixel roda com interrupção
+  desligada. Com os 3–9 nodes da bancada é invisível; corrente comprida
+  (centenas de pixels) começaria a comer bytes da serial — aí é caso de
+  ESP32/RMT mesmo
 
 Duas saídas, o mesmo mapa de canais do croqui:
 
@@ -17,7 +34,7 @@ enxergam a placa como dongle, de brinde.
 
 ## Lista de compras
 
-- ESP32 devkit comum (o da gaveta serve)
+- ESP32 devkit comum — ou o NodeMCU v3 da gaveta, só pixel (ver acima)
 - Pros faróis: fonte 5V com corrente de sobra (LED não roda de USB) e, se o
   dado a 3.3V não segurar, um level shifter **74HCT125**
 - Pras cabeças, depois: módulo **MAX485** (poucos reais; melhor um com
