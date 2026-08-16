@@ -5,7 +5,26 @@ T-CAN485 existir. O sequenciador conecta pelo botão **DMX** (Chrome/Edge de
 desktop, Web Serial) e o que estiver tocando — show ou mesa de canais — sai
 no cabo.
 
-## A placa da gaveta é um NodeMCU v3 (ESP8266) — serve?
+## As placas da gaveta
+
+Duas apareceram, e cada uma tem um papel:
+
+| | NodeMCU v3 (ESP8266) | TTGO T4 v1.3 (ESP32) |
+|---|---|---|
+| Pixel (faróis) | sim, D2 | sim, GPIO21 (conector de 5 vias) |
+| DMX (cabeças) | não (esp_dmx é ESP32-only) | sim, TX 26 / EN 33 |
+| Cartão SD | não | **sim** — e isso muda o jogo |
+| Extra | — | display ILI9341, 8MB PSRAM, carga de bateria |
+
+A T4 é ESP32 de verdade **com slot SD**: além de bancada completa, ela
+serve de mula pro **firmware grande** antes da T-CAN485 chegar — SD por
+SPI (MISO 2, MOSI 15, SCLK 14, CS 13), gravação atômica, manifest e
+playback de `.fseq` do cartão dá pra desenvolver nela. Duas ressalvas:
+os 8MB de PSRAM dela a T-CAN485 **não tem** — nada de encostar nesse
+heap — e a PSRAM ocupa os GPIO16/17, por isso o mapa de pinos dela é
+outro (o bloco `BANCADA_T4` no topo do sketch).
+
+## O NodeMCU v3 (ESP8266) serve?
 
 **Pros faróis, serve inteira.** O mesmo sketch compila pra ela; só a saída
 DMX fica de fora (a lib esp_dmx é ESP32-only), e cabeça DMX é fase 2 de
@@ -34,7 +53,7 @@ enxergam a placa como dongle, de brinde.
 
 ## Lista de compras
 
-- ESP32 devkit comum — ou o NodeMCU v3 da gaveta, só pixel (ver acima)
+- Placa da gaveta: T4 v1.3 (bancada completa) ou NodeMCU v3 (só pixel)
 - Pros faróis: fonte 5V com corrente de sobra (LED não roda de USB) e, se o
   dado a 3.3V não segurar, um level shifter **74HCT125**
 - Pras cabeças, depois: módulo **MAX485** (poucos reais; melhor um com
@@ -60,9 +79,11 @@ DMX:    ESP32           MAX485          XLR
 2. Bibliotecas: **esp_dmx** (Mitch Weisbrod, série 4.1.x) e
    **Adafruit NeoPixel**
 3. Ajustar no topo do sketch: `NODES` (o que está no cabo agora — 1 farol
-   de 3 nodes = 3) e a linha da `fita` (ordem de cor e 400/800kHz)
-4. Placa "ESP32 Dev Module", gravar. LED aceso = recebendo do sequenciador;
-   piscando = segurando o último quadro
+   de 3 nodes = 3), a linha da `fita` (ordem de cor e 400/800kHz) e, se a
+   placa for a T4, descomentar `BANCADA_T4`
+4. Placa "ESP32 Dev Module" (a T4 grava como Dev Module mesmo; NodeMCU é
+   "NodeMCU 1.0"), gravar. LED aceso = recebendo do sequenciador; piscando
+   = segurando o último quadro. Na T4 o "LED" é o backlight do display
 
 ## Os testes que o roadmap pedia saem daqui
 

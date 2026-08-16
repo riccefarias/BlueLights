@@ -46,11 +46,27 @@
 #define DMX_PACKET_SIZE 513
 #endif
 
+/* Descomenta se a placa for a TTGO T4 v1.3 (display + SD). Nela os
+   pinos padrão não servem: GPIO4 é o backlight do TFT, GPIO2 é o MISO
+   do SD e GPIO16/17 pertencem à PSRAM de 8MB. O pixel sai no GPIO21,
+   que é o pino SDA do conector branco de 5 vias (GND 5V SDA SCL 3V3) —
+   farol liga ali sem solda: 5V, GND e dado no mesmo conector. */
+// #define BANCADA_T4
+
+#if defined(BANCADA_T4)
+const int PIN_LED = 4;             // backlight do TFT vira o LED de status
+const int PIN_PIXEL = 21;          // SDA do conector de 5 vias
+#else
 const int PIN_LED = 2;             // no NodeMCU é o LED da placa (aceso em LOW)
 const int PIN_PIXEL = 4;           // ESP32: GPIO4 | NodeMCU: D2 (mesmo GPIO4)
+#endif
 const long BAUD = 921600;
 #if defined(ESP32)
+#if defined(BANCADA_T4)
+const int PIN_TX = 26, PIN_RX = -1, PIN_EN = 33;   // os 2 GPIOs livres da T4
+#else
 const int PIN_TX = 17, PIN_RX = 16, PIN_EN = 21;
+#endif
 const dmx_port_t DMX = DMX_NUM_1;
 #endif
 
