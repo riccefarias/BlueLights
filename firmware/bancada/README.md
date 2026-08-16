@@ -16,6 +16,13 @@ Duas apareceram, e cada uma tem um papel:
 | Cartão SD | não | **sim** — e isso muda o jogo |
 | Extra | — | display ILI9341, 8MB PSRAM, carga de bateria |
 
+Terceira da gaveta: um **Black Pill STM32F401/F411** numa placa de
+periféricos de simulador (pedal/handbrake/encoder/shifter, DB15). É o
+plano C — tem USB **nativo** (CDC, com CRC de verdade, ironia: o que a
+T-CAN485 não tem), mas nem WiFi/BT nem SD, toolchain outra (STM32duino),
+NeoPixel menos rodada e DMX na mão. Só compensa portar a bancada pra ela
+se o NodeMCU e a T4 falharem juntos.
+
 A T4 é ESP32 de verdade **com slot SD**: além de bancada completa, ela
 serve de mula pro **firmware grande** antes da T-CAN485 chegar — SD por
 SPI (MISO 2, MOSI 15, SCLK 14, CS 13), gravação atômica, manifest e
