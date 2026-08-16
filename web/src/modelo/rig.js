@@ -19,6 +19,7 @@ export const CAP = {
   w: "Branco", speed: "Velocidade", fn: "Funcao / reset",
   fog: "Saida de fumaca", fan: "Ventilador",
   pat: "Padrao", x: "Eixo X", y: "Eixo Y", rgb: "Cor RGB",
+  "?": "Desconhecido",
 };
 
 // Gobos sao FORMAS projetadas. A cor vem por outro canal.
@@ -50,7 +51,14 @@ export const PROFILES = {
 
 export const chKey = c => c.replace("+", "");
 export const chLb = c => CAP[chKey(c)] + (c.endsWith("+") ? " fino" : "");
-export const profOf = it => PROFILES[it.pf] || PROFILES["mini-11"];
+
+/* A tabela descoberta na sonda mora NA fixture (`it.chs`) e vence o
+   catálogo: os perfis de fábrica são convenção inventada, e o que se
+   mediu com o aparelho no cabo é a verdade. Canal "?" é posição ainda
+   não identificada — serializa 0 e não oferece capacidade nenhuma. */
+export const profOf = it => it.chs?.length
+  ? { name: "descoberto na sonda", cat: "head", ch: it.chs, fisica: FISICA_HEAD }
+  : PROFILES[it.pf] || PROFILES["mini-11"];
 export const footprint = it => it.k === "head" ? profOf(it).ch.length : 0;
 
 export const COLOR_ORDER = ["RGB", "GRB", "BRG", "RGBW"];

@@ -799,7 +799,57 @@ function hsDeRgb(r, g, b) {
   return { hue: h, sat: mx ? d / mx : 0 };
 }
 
-function CroquiInsp({ item, chan, manual, bytes, onCanal, onSoltar, onGravar, onEdit, onDel, onAdd }) {
+/* Capacidades que a sonda oferece pra rotular canal descoberto. A ordem
+   segue o layout típico de cabeça china: movimento, luz, roda, resto. */
+const SONDA_OPCOES = ["?", "pan", "pan+", "tilt", "tilt+", "dim", "shut",
+  "color", "gobo", "grot", "prism", "focus", "speed", "fn", "r", "g", "b", "w"];
+
+/* Sonda: sliders crus por número de canal, sem rótulo inventado. É a
+   ferramenta do processo real — aparelho no cabo, digita o endereço,
+   mexe um slider, vê o que acontece, rotula. O rótulo vira a tabela. */
+function SondaDmx({ sonda, setSonda, item, onEdit }) {
+  const muda = patch => setSonda(s => ({ ...s, ...patch }));
+  const aplicar = () => {
+    onEdit(item.id, { chs: Array.from({ length: sonda.n }, (_, j) => sonda.caps[j] || "?") });
+    setSonda(null);
+  };
+  return (<>
+    <div className="sec">Sonda — a tabela sai do aparelho</div>
+    <div className="kv"><span>Endereço no menu do aparelho</span>
+      <input className="sonda-num mono" type="number" min="1" max="512" value={sonda.base}
+        aria-label="Endereço DMX do aparelho"
+        onChange={e => muda({ base: Math.max(1, Math.min(512, +e.target.value || 1)) })} /></div>
+    <div className="kv"><span>Quantos canais</span>
+      <input className="sonda-num mono" type="number" min="1" max="32" value={sonda.n}
+        aria-label="Quantidade de canais do modo"
+        onChange={e => muda({ n: Math.max(1, Math.min(32, +e.target.value || 1)) })} /></div>
+    <div className="chmap">
+      {Array.from({ length: sonda.n }, (_, j) => (
+        <div key={j} className="chrow">
+          <span className="mono chn">{sonda.base + j}</span>
+          <input type="range" min="0" max="255" step="1" value={sonda.vals[j] ?? 0}
+            aria-label={`canal ${sonda.base + j}`}
+            onChange={e => muda({ vals: { ...sonda.vals, [j]: +e.target.value } })} />
+          <span className="mono chv">{sonda.vals[j] ?? 0}</span>
+          <select className="sonda-sel" value={sonda.caps[j] || "?"}
+            aria-label={`o que faz o canal ${sonda.base + j}`}
+            onChange={e => muda({ caps: { ...sonda.caps, [j]: e.target.value } })}>
+            {SONDA_OPCOES.map(o => (
+              <option key={o} value={o}>{o === "?" ? "?" : chLb(o)}</option>))}
+          </select>
+        </div>))}
+    </div>
+    <button className="grava" onClick={aplicar}>Usar como tabela desta cabeça</button>
+    <button className="solta" onClick={() => setSonda(null)}>Fechar sonda</button>
+    <div className="hint">Com a bancada no cabo (botão DMX ligado), cada slider sai
+      direto no endereço de verdade — independe do mapa do croqui. Mexeu, viu o que
+      o aparelho fez, rotula no seletor. "Usar como tabela" grava a descoberta na
+      fixture: ela passa a valer no lugar do perfil de catálogo e vai salva no
+      documento. Canal "?" fica anotado como desconhecido e serializa zero.</div>
+  </>);
+}
+
+function CroquiInsp({ item, chan, manual, bytes, onCanal, onSoltar, onGravar, onEdit, onDel, onAdd, sonda, setSonda }) {
   return (<>
     <div className="palette">
       {["cab", "farol", "fita", "head"].map(k => (
@@ -896,6 +946,21 @@ function CroquiInsp({ item, chan, manual, bytes, onCanal, onSoltar, onGravar, on
         )}
         <div className="hint">Sem gobo no perfil, um efeito que peça gobo simplesmente
           não faz nada nessa cabeça. O efeito fala em capacidade, não em número de canal.</div>
+
+        {item.chs?.length > 0 && (
+          <div className="hint">Esta cabeça usa a <b>tabela da sonda</b> ({item.chs.length}ch);
+            o perfil de catálogo acima está ignorado.{" "}
+            <button className="lnk" onClick={() => onEdit(item.id, { chs: null })}>
+              Voltar ao catálogo</button></div>)}
+        {sonda?.id === item.id ? (
+          <SondaDmx sonda={sonda} setSonda={setSonda} item={item} onEdit={onEdit} />
+        ) : (
+          <button className="solta" onClick={() => setSonda({
+            id: item.id, base: chan[item.id] ?? 1,
+            n: item.chs?.length || footprint(item) || 16, vals: {},
+            caps: Object.fromEntries((item.chs || []).map((c, i) => [i, c])),
+          })}>Sondar canais — aparelho sem tabela</button>
+        )}
       </>)}
       <button className="del" onClick={() => onDel(item.id)}>Remover do croqui</button>
     </>)}
@@ -1193,6 +1258,23 @@ export default function App() {
      quadro renderizado seria loucura; o ref sempre tem o quadro atual. */
   const bytesRef = useRef(bytes);
   bytesRef.current = bytes;
+
+  /* Sonda: canais crus no endereço que o aparelho mostra no menu —
+     independente do mapa do croqui, porque o mapa é justamente o que a
+     sonda está descobrindo. Entram por cima do quadro na saída serial. */
+  const [sonda, setSonda] = useState(null);
+  const sondaRef = useRef(null);
+  sondaRef.current = sonda;
+
+  const quadroSerial = useCallback(() => {
+    const s = sondaRef.current, b = bytesRef.current;
+    if (!s) return b;
+    const out = new Uint8Array(Math.max(b.length, s.base - 1 + s.n));
+    out.set(b);
+    for (const j in s.vals) out[s.base - 1 + +j] = s.vals[j];
+    return out;
+  }, []);
+
   const [dmxOn, setDmxOn] = useState(false);
   const dmxHandle = useRef(null);
   const alternarDmx = useCallback(async () => {
@@ -1203,12 +1285,11 @@ export default function App() {
       return;
     }
     try {
-      dmxHandle.current = await ligarDmx(
-        () => bytesRef.current,
+      dmxHandle.current = await ligarDmx(quadroSerial,
         () => { dmxHandle.current = null; setDmxOn(false); });
       setDmxOn(true);
     } catch {}                     // cancelou o diálogo de porta: sem drama
-  }, []);
+  }, [quadroSerial]);
 
   const labelFor = useCallback(id =>
     d.groups.find(g => g.id === id)?.label ||
@@ -1594,7 +1675,7 @@ export default function App() {
           <aside className="insp">
             <div className="pane-t">{croqui ? "Equipamento" : "Efeito"}</div>
             {croqui
-              ? <CroquiInsp item={pickItem} chan={d.chan} manual={pickItem ? manual[pickItem.id] : null} bytes={bytes} onCanal={setCanal} onSoltar={soltarManual} onGravar={gravarPose} onEdit={editItem} onDel={delItem} onAdd={addItem} />
+              ? <CroquiInsp item={pickItem} chan={d.chan} manual={pickItem ? manual[pickItem.id] : null} bytes={bytes} onCanal={setCanal} onSoltar={soltarManual} onGravar={gravarPose} onEdit={editItem} onDel={delItem} onAdd={addItem} sonda={sonda} setSonda={setSonda} />
               : <EffectInsp selClip={selClip} insercao={insercao} tracks={tracks} aviso={selClip ? avisos[selClip.clip.id] : null}
                   labelFor={labelFor} d={d} rig={rig} ed={ed} />}
           </aside>
@@ -1676,7 +1757,7 @@ export default function App() {
           {tab === "croqui" && (
             <div className="m-croqui">
               {barraArquivo(true)}
-              <CroquiInsp item={pickItem} chan={d.chan} manual={pickItem ? manual[pickItem.id] : null} bytes={bytes} onCanal={setCanal} onSoltar={soltarManual} onGravar={gravarPose} onEdit={editItem} onDel={delItem} onAdd={addItem} />
+              <CroquiInsp item={pickItem} chan={d.chan} manual={pickItem ? manual[pickItem.id] : null} bytes={bytes} onCanal={setCanal} onSoltar={soltarManual} onGravar={gravarPose} onEdit={editItem} onDel={delItem} onAdd={addItem} sonda={sonda} setSonda={setSonda} />
             </div>)}
           {tab === "rig" && (
             <div className="m-rig">
@@ -1975,6 +2056,12 @@ button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .grava{margin:10px 13px 0;width:calc(100% - 26px);padding:9px;border-radius:8px;
   background:#0B1A18;border:1px solid #2E5B4E;color:#6FD3B4;font-size:11.5px;font-weight:600}
 .grava:hover{background:#10241F}
+.sonda-num{width:64px;padding:3px 7px;border-radius:6px;background:#0D1420;
+  border:1px solid var(--line);color:var(--ink);font-size:11px;text-align:right}
+.sonda-sel{flex:0 0 96px;padding:2px 4px;border-radius:6px;background:#0D1420;
+  border:1px solid var(--line);color:#9FADC2;font-size:10px;max-width:96px}
+.lnk{display:inline;padding:0;border:none;background:none;color:#8FB4FF;
+  font-size:inherit;text-decoration:underline;cursor:pointer}
 
 .caps{display:flex;flex-wrap:wrap;gap:4px;padding:0 13px 10px}
 .cap{padding:3px 7px;border-radius:5px;background:#101A2B;border:1px solid #1E2C44;

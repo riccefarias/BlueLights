@@ -139,7 +139,10 @@ canais saem no cabo sem esperar o firmware da T-CAN485.
 - [ ] Gravar `firmware/bancada` no ESP32 da gaveta
 - [ ] Farol no cabo: fecha os três testes de uma vez — 400 vs 800kHz,
       1 vs 3 endereços por farol, ordem de cor
-- [ ] Pras cabeças depois: módulo MAX485 (ou ADM2582E, já isolado) + XLR
+- [ ] Pras cabeças depois: módulo MAX485 (ou ADM2582E, já isolado) + XLR.
+      Tabela DMX não vem de manual: vem da **sonda** no inspector da cabeça —
+      digita o endereço do menu, mexe slider por slider, rotula o que mexeu,
+      "usar como tabela" e a descoberta fica salva no documento
 
 ## Antes de comprar / montar
 
