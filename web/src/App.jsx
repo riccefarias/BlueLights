@@ -974,7 +974,7 @@ const hexDeRgb = c => "#" + (c || [0, 0, 0])
   .map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("");
 const rgbDeHex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) || 0);
 
-function CroquiInsp({ item, chan, pix, manual, bytes, onCanal, onCor, onSoltar, onGravar, onEdit, onDel, onAdd, sonda, setSonda, flash, onFlash }) {
+function CroquiInsp({ item, chan, pix, manual, bytes, onCanal, onCor, onSoltar, onGravar, onEdit, onDel, onAdd, sonda, setSonda, flash, onFlash, onTrilha }) {
   return (<>
     <div className="palette">
       {["cab", "farol", "fita", "head"].map(k => (
@@ -1125,6 +1125,13 @@ function CroquiInsp({ item, chan, pix, manual, bytes, onCanal, onCor, onSoltar, 
             caps: Object.fromEntries((item.chs || []).map((c, i) => [i, c])),
           })}>Sondar canais — aparelho sem tabela</button>
         )}
+      </>)}
+      {item.k !== "cab" && (<>
+        <button className="grava" onClick={() => onTrilha(item)}>
+          + Trilha só desta fixture</button>
+        <div className="hint">Cria uma camada na timeline que fala só com
+          "{item.lb}" — bloco de Cor fixa ali muda este equipamento sem mexer
+          no resto do grupo.</div>
       </>)}
       <button className="del" onClick={() => onDel(item.id)}>Remover do croqui</button>
     </>)}
@@ -1616,9 +1623,9 @@ export default function App() {
 
   /* Alvo é grupo ou fixture solta — o motor resolve os dois igual. */
   const alvos = useMemo(() => [
-    ...d.groups.map(g => ({ id: g.id, lb: g.label, kind: g.id === "g-heads" ? "dmx" : "pixel" })),
-    ...d.heads.map(h => ({ id: h.id, lb: h.lb, kind: "dmx" })),
-    ...d.pix.map(i => ({ id: i.id, lb: i.lb, kind: "pixel" })),
+    ...d.groups.map(g => ({ id: g.id, lb: g.label, kind: g.id === "g-heads" ? "dmx" : "pixel", sec: "Grupos" })),
+    ...d.heads.map(h => ({ id: h.id, lb: h.lb, kind: "dmx", sec: "Cabeças" })),
+    ...d.pix.map((i, j) => ({ id: i.id, lb: `#${j + 1} · ${i.lb}`, kind: "pixel", sec: "Farol / fita, um por um" })),
   ], [d]);
 
   const criarTrilha = useCallback((target, kind) => {
@@ -1626,6 +1633,14 @@ export default function App() {
     setTracks(ts => adicionarTrilha(ts, target, kind));
     setNovaTrilha(false);
   }, [marcar]);
+
+  /* Atalho do croqui: trilha da fixture selecionada, já caindo na Linha
+     pra inserir o bloco — sem caçar o alvo na lista do "+ trilha". */
+  const trilhaDaFixture = useCallback((it) => {
+    criarTrilha(it.id, KIND[it.k].pixel ? "pixel" : "dmx");
+    setSheet(false);                 // o toque que selecionou no croqui deixa
+    setTab("linha"); setView("show");//  um sheet suprimido; não pode vazar aqui
+  }, [criarTrilha]);
 
   /* Mesa → timeline: congela o que está nos sliders num bloco de pose,
      no playhead, na trilha da cabeça (criando a trilha se não houver).
@@ -1878,7 +1893,7 @@ export default function App() {
           <aside className="insp">
             <div className="pane-t">{croqui ? "Equipamento" : "Efeito"}</div>
             {croqui
-              ? <CroquiInsp item={pickItem} chan={d.chan} pix={d.pix} manual={pickItem ? manual[pickItem.id] : null} bytes={bytes} onCanal={setCanal} onCor={setCorNode} flash={flash} onFlash={alternarFlash} onSoltar={soltarManual} onGravar={gravarPose} onEdit={editItem} onDel={delItem} onAdd={addItem} sonda={sonda} setSonda={setSonda} />
+              ? <CroquiInsp item={pickItem} chan={d.chan} pix={d.pix} manual={pickItem ? manual[pickItem.id] : null} bytes={bytes} onCanal={setCanal} onCor={setCorNode} flash={flash} onFlash={alternarFlash} onSoltar={soltarManual} onGravar={gravarPose} onEdit={editItem} onDel={delItem} onAdd={addItem} sonda={sonda} setSonda={setSonda} onTrilha={trilhaDaFixture} />
               : <EffectInsp selClip={selClip} insercao={insercao} tracks={tracks} aviso={selClip ? avisos[selClip.clip.id] : null}
                   labelFor={labelFor} d={d} rig={rig} ed={ed} />}
           </aside>
@@ -1891,12 +1906,14 @@ export default function App() {
         <div className="scrim" onClick={() => setNovaTrilha(false)} />
         <div className="alvos" role="dialog" aria-label="Nova trilha">
           <div className="sec">Trilha nova pra qual alvo</div>
-          {alvos.map(a => (
-            <button key={a.id} className="alvo" onClick={() => criarTrilha(a.id, a.kind)}>
+          {alvos.map((a, i) => (<React.Fragment key={a.id}>
+            {a.sec !== alvos[i - 1]?.sec && <div className="alvo-sec">{a.sec}</div>}
+            <button className="alvo" onClick={() => criarTrilha(a.id, a.kind)}>
               <span className={`bar ${a.kind}`} />
               <span className="alvo-lb">{a.lb}</span>
               <span className="mono dim">{a.kind}</span>
-            </button>))}
+            </button>
+          </React.Fragment>))}
           <div className="hint">Pode repetir alvo: cada trilha é uma camada, e no
             DMX elas compõem por campo — varredura escreve pan, gobo escreve gobo.</div>
         </div>
@@ -1960,7 +1977,7 @@ export default function App() {
           {tab === "croqui" && (
             <div className="m-croqui">
               {barraArquivo(true)}
-              <CroquiInsp item={pickItem} chan={d.chan} pix={d.pix} manual={pickItem ? manual[pickItem.id] : null} bytes={bytes} onCanal={setCanal} onCor={setCorNode} flash={flash} onFlash={alternarFlash} onSoltar={soltarManual} onGravar={gravarPose} onEdit={editItem} onDel={delItem} onAdd={addItem} sonda={sonda} setSonda={setSonda} />
+              <CroquiInsp item={pickItem} chan={d.chan} pix={d.pix} manual={pickItem ? manual[pickItem.id] : null} bytes={bytes} onCanal={setCanal} onCor={setCorNode} flash={flash} onFlash={alternarFlash} onSoltar={soltarManual} onGravar={gravarPose} onEdit={editItem} onDel={delItem} onAdd={addItem} sonda={sonda} setSonda={setSonda} onTrilha={trilhaDaFixture} />
             </div>)}
           {tab === "rig" && (
             <div className="m-rig">
@@ -2178,6 +2195,8 @@ button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
   text-align:left;font-size:11.5px;color:#9FADC2}
 .alvo:hover{background:#152136;color:var(--ink)}
 .alvo-lb{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.alvo-sec{padding:10px 13px 4px;font-size:9.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:#5A6B85}
 .clip.act{box-shadow:0 0 13px color-mix(in srgb,var(--fx) 42%,transparent)}
 .clip.avi{border-color:var(--hot);border-left-color:var(--hot)}
 .clip-w{flex:0 0 auto;font-size:10px;line-height:1;color:var(--hot);pointer-events:none;
