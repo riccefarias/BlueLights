@@ -5,8 +5,11 @@ import {
   chLb, footprint, nodesOf, sizeOf,
 } from "./modelo/rig.js";
 import {
-  BARS, BEAT, BPM, DURATION, EFFECTS, FPS, PARAM_META, PARAM_PADRAO, SCENES, TRACKS,
+  BEAT, EFFECTS, FPS, PARAM_META, PARAM_PADRAO, SCENES, TRACKS, gradePadrao,
 } from "./modelo/sequencia.js";
+import { POR_COMPASSO, gradeDeBatidas, gradeFixa } from "./modelo/grade.js";
+import { rastrearBatidas } from "./motor/batidas.js";
+import { paraMono } from "./motor/bpm.js";
 import {
   acharClip, adicionarTrilha, ajustarParam, inserirClip, moverClip,
   redimensionarClip, removerClip, removerTrilha, trocarEfeito,
@@ -359,8 +362,8 @@ function Stage({ rig, frame, edit, sel, onPick, onMove, chan }) {
    PAINÉIS
    ============================================================ */
 
-function Timeline({ t, tracks, sel, setSel, scrub, compact, labelFor, peaks, ed, insercao }) {
-  const pct = v => `${(v / DURATION) * 100}%`;
+function Timeline({ t, tracks, grade, sel, setSel, scrub, compact, labelFor, peaks, ed, insercao }) {
+  const pct = v => `${(v / grade.duracao) * 100}%`;
   const drag = useRef(null);
 
   /* Um arrasto = um ponto de undo. O ponto é marcado no primeiro movimento
@@ -385,7 +388,7 @@ function Timeline({ t, tracks, sel, setSel, scrub, compact, labelFor, peaks, ed,
     }
     // Sempre a partir do tempo original: somar delta a cada evento acumula
     // erro e o clip escorrega debaixo do dedo.
-    const dt = ((e.clientX - dr.x0) / dr.w) * DURATION;
+    const dt = ((e.clientX - dr.x0) / dr.w) * grade.duracao;
     if (dr.borda) ed.redimensionar(dr.ti, dr.id, dr.borda,
       (dr.borda === "ini" ? dr.t0 : dr.t1) + dt);
     else ed.mover(dr.ti, dr.id, dr.t0 + dt);
@@ -393,9 +396,20 @@ function Timeline({ t, tracks, sel, setSel, scrub, compact, labelFor, peaks, ed,
 
   const soltar = () => { drag.current = null; };
 
+  const compassos = useMemo(() => {
+    const out = [];
+    for (let i = 0; i < grade.batidas.length; i += POR_COMPASSO) {
+      const t0 = grade.batidas[i];
+      const t1 = grade.tempoDe(i + POR_COMPASSO);
+      if (t0 >= grade.duracao) break;
+      out.push({ t: t0, dur: Math.min(t1, grade.duracao) - t0 });
+    }
+    return out;
+  }, [grade]);
+
   const vazioNaLinha = (e, ti) => {
     const r = e.currentTarget.getBoundingClientRect();
-    ed.apontar(ti, ((e.clientX - r.left) / r.width) * DURATION);
+    ed.apontar(ti, ((e.clientX - r.left) / r.width) * grade.duracao);
     scrub(e);
   };
 
@@ -422,12 +436,15 @@ function Timeline({ t, tracks, sel, setSel, scrub, compact, labelFor, peaks, ed,
                 `M${i},${50 - v * 46} L${i},${50 + v * 46}`).join("")}
                 stroke="#22406E" strokeWidth="1" />
             </svg>)}
-          {Array.from({ length: BARS }, (_, i) => (
-            <div key={i} className="tl-bar" style={{ left: `${(i / BARS) * 100}%`, width: `${100 / BARS}%` }}>
+          {/* As linhas saem do mapa de batidas, não de divisão igual: é
+              por isso que elas caem em cima da música mesmo com rubato. */}
+          {compassos.map((c, i) => (
+            <div key={i} className="tl-bar" style={{ left: pct(c.t), width: pct(c.dur) }}>
               <span className="mono">{i + 1}</span>
             </div>))}
-          {Array.from({ length: BARS * 4 }, (_, i) => (
-            <div key={i} className="tl-beat" style={{ left: `${(i / (BARS * 4)) * 100}%` }} />))}
+          {grade.batidas.length <= 260 && Array.from(grade.batidas, (b, i) =>
+            i % POR_COMPASSO === 0 ? null :
+              <div key={i} className="tl-beat" style={{ left: pct(b) }} />)}
         </div>
         <div className="tl-rows">
           {tracks.map((tr, ti) => (
@@ -691,6 +708,8 @@ export default function App() {
   const [tracks, setTracks] = useState(TRACKS);
   const [insercao, setInsercao] = useState(null);   // {ti, t} — onde criar bloco
   const [novaTrilha, setNovaTrilha] = useState(false);
+  const [grade, setGrade] = useState(gradePadrao);
+  const [analisando, setAnalisando] = useState(false);
   const [view, setView] = useState("show");      // show | croqui
   const [t, setT] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -725,7 +744,11 @@ export default function App() {
     return () => window.removeEventListener("resize", on);
   }, []);
 
-  const loop = SCENES.find(s => s.id === scene) || SCENES[4];
+  /* A cena "faixa toda" tem que valer a faixa toda: com áudio carregado
+     a duração vem do arquivo, não dos 8 compassos de demonstração. */
+  const cenas = useMemo(() => SCENES.map(s =>
+    s.id === "s5" ? { ...s, t1: grade.duracao, sub: `${grade.compassos} compassos` } : s), [grade]);
+  const loop = cenas.find(s => s.id === scene) || cenas[4];
 
   const stopSrc = useCallback(() => {
     const A = au.current;
@@ -791,13 +814,30 @@ export default function App() {
     setHasFile(true);
     setMidia(file.name);
     setPeaks(A.peaks);
-    if (playing) startAt(loop.t0);
-  }, [playing, startAt, loop.t0]);
+
+    /* Quem manda na grade passa a ser o arquivo: a duração vem dele, e o
+       mapa de batidas vem da análise. Sem isso a timeline continuaria com
+       os 15 segundos de demonstração e nenhuma faixa caberia nela. */
+    setAnalisando(true);
+    await new Promise(r => setTimeout(r, 30));      // deixa a UI pintar o aviso
+    try {
+      const r = rastrearBatidas(paraMono(buf), buf.sampleRate);
+      setGrade(r.batidas.length >= 2
+        ? gradeDeBatidas(r.batidas, buf.duration, { confianca: r.confianca })
+        : gradeFixa({ duracao: buf.duration, confianca: 0 }));
+    } catch {
+      setGrade(gradeFixa({ duracao: buf.duration, confianca: 0 }));
+    }
+    setAnalisando(false);
+    setT(0);
+    if (playing) startAt(0);
+  }, [playing, startAt]);
 
   const d = useMemo(() => derive(rig), [rig]);
   const eff = black ? 0 : master;
   const tLuz = t + offset;
-  const frame = useMemo(() => renderFrame(d, tLuz, eff, tracks), [d, tLuz, eff, tracks]);
+  const frame = useMemo(() => renderFrame(d, tLuz, eff, tracks, grade),
+    [d, tLuz, eff, tracks, grade]);
 
   const labelFor = useCallback(id =>
     d.groups.find(g => g.id === id)?.label ||
@@ -805,9 +845,11 @@ export default function App() {
 
   const selClip = useMemo(() => acharClip(tracks, sel), [tracks, sel]);
 
+  const dur = useRef(0);
+  dur.current = grade.duracao;
   const scrub = useCallback(e => {
     const r = e.currentTarget.getBoundingClientRect();
-    setT(Math.max(0, Math.min(DURATION, ((e.clientX - r.left) / r.width) * DURATION)));
+    setT(Math.max(0, Math.min(dur.current, ((e.clientX - r.left) / r.width) * dur.current)));
   }, []);
   const pickClip = useCallback(id => { setSel(id); if (mode !== "estudio") setSheet(true); }, [mode]);
 
@@ -833,7 +875,7 @@ export default function App() {
   const exportar = useCallback(async () => {
     setExp("indo");
     try {
-      const bytes = await exportarFseq({ rig, tracks, offset,
+      const bytes = await exportarFseq({ rig, tracks, grade, offset,
         midia: midia || undefined });
       const nome = (midia ? midia.replace(/\.[^.]+$/, "") : "paredao") + ".fseq";
       baixarArquivo(bytes, nome);
@@ -841,7 +883,7 @@ export default function App() {
     } catch (e) {
       setExp(`falhou: ${e.message}`);
     }
-  }, [rig, tracks, offset, midia]);
+  }, [rig, tracks, grade, offset, midia]);
 
   /* ---------- histórico ----------
      Snapshot do documento, não patch de campo: com ~18 nodes e uma dúzia de
@@ -853,21 +895,21 @@ export default function App() {
 
   const marcar = useCallback(() => {
     const h = hist.current;
-    h.pas.push({ rig, tracks });
+    h.pas.push({ rig, tracks, grade });
     if (h.pas.length > LIMITE_HIST) h.pas.shift();
     h.fut = [];
     setHistN(n => n + 1);
-  }, [rig, tracks]);
+  }, [rig, tracks, grade]);
 
   const andar = useCallback((de, para) => {
     const h = hist.current;
     if (!h[de].length) return;
-    h[para].push({ rig, tracks });
+    h[para].push({ rig, tracks, grade });
     const est = h[de].pop();
-    setRig(est.rig); setTracks(est.tracks);
+    setRig(est.rig); setTracks(est.tracks); setGrade(est.grade);
     setInsercao(null);
     setHistN(n => n + 1);
-  }, [rig, tracks]);
+  }, [rig, tracks, grade]);
 
   const desfazer = useCallback(() => andar("pas", "fut"), [andar]);
   const refazer = useCallback(() => andar("fut", "pas"), [andar]);
@@ -876,14 +918,14 @@ export default function App() {
 
   const ed = useMemo(() => ({
     marcar,
-    mover: (ti, id, t0) => setTracks(ts => moverClip(ts, ti, id, t0)),
+    mover: (ti, id, t0) => setTracks(ts => moverClip(ts, ti, id, t0, grade)),
     redimensionar: (ti, id, borda, t) =>
-      setTracks(ts => redimensionarClip(ts, ti, id, borda, t)),
+      setTracks(ts => redimensionarClip(ts, ti, id, borda, t, grade)),
     apontar: (ti, t) => { setInsercao({ ti, t }); setSel(null); },
     inserir: (fx) => {
       if (!insercao) return;
       marcar();
-      const ts = inserirClip(tracks, insercao.ti, fx, insercao.t);
+      const ts = inserirClip(tracks, insercao.ti, fx, insercao.t, grade);
       setTracks(ts);
       // seleciona o que acabou de nascer, pra já poder ajustar
       const novo = ts[insercao.ti].clips.find(c =>
@@ -905,7 +947,7 @@ export default function App() {
     },
     removerTrilha: (ti) => { marcar(); setTracks(ts => removerTrilha(ts, ti)); },
     pedirTrilha: () => setNovaTrilha(true),
-  }), [marcar, insercao, tracks, selClip]);
+  }), [marcar, insercao, tracks, selClip, grade]);
 
   /* Alvo é grupo ou fixture solta — o motor resolve os dois igual. */
   const alvos = useMemo(() => [
@@ -948,6 +990,7 @@ export default function App() {
     const doc = desserializarDocumento(texto);   // valida tudo antes de aplicar nada
     setRig(doc.rig);
     setTracks(doc.sequencia);
+    setGrade(doc.grade);
     setMidia(doc.midia);
     setPick(null); setInsercao(null);
     hist.current = { pas: [], fut: [] }; setHistN(n => n + 1);
@@ -982,12 +1025,12 @@ export default function App() {
     const id = setTimeout(async () => {
       setSalvo("salvando");
       try {
-        await gravar(handle.current, paraJson(serializarDocumento({ rig, sequencia: tracks, midia })));
+        await gravar(handle.current, paraJson(serializarDocumento({ rig, sequencia: tracks, midia, grade })));
         setSalvo("salvo");
       } catch (e) { setSalvo(`erro: ${e.message}`); }
     }, 700);
     return () => clearTimeout(id);
-  }, [rig, tracks, midia]);
+  }, [rig, tracks, grade, midia]);
 
   const abrir = useCallback(async () => {
     try {
@@ -1006,7 +1049,7 @@ export default function App() {
 
   const salvarComo = useCallback(async () => {
     const nome = arq || `corsa${EXTENSAO}`;
-    const texto = paraJson(serializarDocumento({ rig, sequencia: tracks, midia }));
+    const texto = paraJson(serializarDocumento({ rig, sequencia: tracks, midia, grade }));
     if (!temFSA) { baixar(texto, nome); setArq(nome); setSalvo("salvo"); return; }
     try {
       const h = await escolherDestino(nome);
@@ -1020,7 +1063,7 @@ export default function App() {
     } catch (e) {
       if (e.name !== "AbortError") setSalvo(`erro: ${e.message}`);
     }
-  }, [arq, rig, tracks, midia]);
+  }, [arq, rig, tracks, grade, midia]);
 
   const retomar = useCallback(async () => {
     const h = handle.current;
@@ -1084,7 +1127,12 @@ export default function App() {
           <button className="btn btn-sm" onClick={refazer} disabled={!hist.current.fut.length}
             title="Refazer (Ctrl+Shift+Z)" aria-label="Refazer">↷</button>
           {!palco && <div className="hd-meta">
-            <span><b>{BPM}</b> bpm</span><span><b>{Math.floor(t / BEAT) % 4 + 1}</b>/4</span></div>}
+            <span><b>{grade.bpm.toFixed(1)}</b> bpm</span>
+            <span><b>{(Math.floor(grade.indiceEm(t)) % POR_COMPASSO + POR_COMPASSO)
+              % POR_COMPASSO + 1}</b>/4</span>
+            {analisando && <span className="an">analisando…</span>}
+            {grade.confianca > 0 && <span title="confiança da detecção">
+              {"▮".repeat(Math.max(1, Math.round(grade.confianca * 3)))}</span>}</div>}
         </div>
         {estudio && (
           <div className="hd-out">
@@ -1093,7 +1141,7 @@ export default function App() {
             <span className="chip">{d.totalCh} canais</span>
             {exp && exp !== "indo" && <span className="chip chip-ok">{exp}</span>}
             <button className="btn btn-ghost" onClick={exportar} disabled={exp === "indo"}
-              title={`${Math.round(DURATION * FPS)} quadros a ${FPS}fps · zlib`}>
+              title={`${Math.round(grade.duracao * FPS)} quadros a ${FPS}fps · zlib`}>
               {exp === "indo" ? "Exportando…" : "Exportar .fseq"}
             </button>
           </div>)}
@@ -1122,7 +1170,7 @@ export default function App() {
                   labelFor={labelFor} d={d} rig={rig} ed={ed} />}
           </aside>
         </div>
-        <Timeline t={t} tracks={tracks} sel={sel} setSel={pickClip} scrub={scrub}
+        <Timeline t={t} tracks={tracks} grade={grade} sel={sel} setSel={pickClip} scrub={scrub}
           labelFor={labelFor} peaks={peaks} ed={ed} insercao={insercao} />
       </>)}
 
@@ -1148,7 +1196,7 @@ export default function App() {
 
         {mesa && (
           <div className="strip">
-            {SCENES.map(s => (
+            {cenas.map(s => (
               <button key={s.id} className={`spad ${scene === s.id ? "on" : ""}`} style={{ "--c": s.c }}
                 onClick={() => { setScene(s.id); setT(s.t0); setPlaying(true); }}>
                 <span className="pad-n">{s.name}</span><span className="pad-s">{s.sub}</span>
@@ -1174,11 +1222,11 @@ export default function App() {
 
         <div className="m-body">
           {mesa && tab !== "croqui" && tab !== "rig" &&
-            <Timeline t={t} tracks={tracks} sel={sel} setSel={pickClip} scrub={scrub} compact
+            <Timeline t={t} tracks={tracks} grade={grade} sel={sel} setSel={pickClip} scrub={scrub} compact
               labelFor={labelFor} ed={ed} insercao={insercao} />}
           {palco && tab === "palco" && (
             <div className="pads">
-              {SCENES.map(s => (
+              {cenas.map(s => (
                 <button key={s.id} className={`pad ${scene === s.id ? "on" : ""}`} style={{ "--c": s.c }}
                   onClick={() => { setScene(s.id); setT(s.t0); setPlaying(true); }}>
                   <span className="pad-n">{s.name}</span><span className="pad-s">{s.sub}</span>
@@ -1194,7 +1242,7 @@ export default function App() {
               </button>
             </div>)}
           {palco && tab === "linha" &&
-            <Timeline t={t} tracks={tracks} sel={sel} setSel={pickClip} scrub={scrub} compact
+            <Timeline t={t} tracks={tracks} grade={grade} sel={sel} setSel={pickClip} scrub={scrub} compact
               labelFor={labelFor} ed={ed} insercao={insercao} />}
           {tab === "croqui" && (
             <div className="m-croqui">
@@ -1257,6 +1305,8 @@ button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .chip-amber{color:#FFC97A;border-color:#3D2E14;background:#1E1608}
 .chip-ok{color:#6FD3B4;border-color:#14382E;background:#081A15}
 .chip-warn{color:#FFC97A;border-color:#3D2E14;background:#1E1608}
+.an{color:#FFC97A}
+.hd-meta span{white-space:nowrap}
 .btn:disabled{opacity:.5;cursor:progress}
 .ar{display:flex;align-items:center;gap:6px;min-width:0}
 .ar .chip{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px}

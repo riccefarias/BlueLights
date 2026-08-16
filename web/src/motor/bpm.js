@@ -152,7 +152,10 @@ function periodoBruto(onset, taxa) {
     nota *= peso(taxa * 60 / lag);
     if (nota > melhorNota) { melhorNota = nota; melhorLag = lag; }
   }
-  return melhorLag;
+  /* Envelope sem ataque nenhum dá autocorrelação zerada, e aí o argmax
+     escolhe o primeiro lag da lista e devolve um andamento inventado.
+     Silêncio não tem andamento — melhor dizer que não sabe. */
+  return melhorNota > 0 ? melhorLag : 0;
 }
 
 const mediana = xs => {

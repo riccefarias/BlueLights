@@ -8,12 +8,16 @@ em tempo e chama.
 
 | | |
 |---|---|
-| Encaixe | semicolcheia (`BEAT / 4`) |
+| Encaixe | semicolcheia (1/4 de batida) |
 | Duração mínima | uma semicolcheia |
 | Bloco novo nasce com | 4 batidas, ou o que couber até o vizinho |
 
-A grade é fina o bastante pra síncope e grossa o bastante pra não precisar de
-mira no celular.
+Fina o bastante pra síncope e grossa o bastante pra não precisar de mira no
+celular.
+
+Tudo isso sai da **batida local**, não de constante: num trecho que acelera,
+"quatro batidas" é menos segundo, e é isso que a pessoa quer dizer. Ver
+[11-grade.md](11-grade.md).
 
 ## Bloco não sobrepõe bloco
 

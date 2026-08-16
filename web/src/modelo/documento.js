@@ -12,7 +12,8 @@
    ============================================================ */
 
 import { KIND, RIG_PADRAO } from "./rig.js";
-import { TRACKS } from "./sequencia.js";
+import { TRACKS, gradePadrao } from "./sequencia.js";
+import { gradeDeDoc, gradeParaDoc } from "./grade.js";
 
 export const VERSAO = 1;
 export const TIPO = "bluelights";
@@ -22,13 +23,17 @@ export const EXTENSAO = ".blz.json";
    Quando der pra editar clip e existirem doze faixas contra o mesmo
    croqui, isto vira dois documentos — e aí é migração de v1 pra v2,
    que é exatamente pra isso que o campo de versão está aqui. */
-export function serializarDocumento({ rig, sequencia = TRACKS, midia = null }) {
+export function serializarDocumento({ rig, sequencia = TRACKS, midia = null, grade }) {
   return {
     tipo: TIPO,
     v: VERSAO,
     rig,
     sequencia,
     midia,
+    /* A grade entra inteira, com o mapa de batidas. São ~500 números numa
+       faixa de 4 minutos — o preço de nunca mais ter que reanalisar o
+       áudio, e de o rubato ajustado à mão sobreviver ao arquivo. */
+    grade: gradeParaDoc(grade || gradePadrao()),
   };
 }
 
@@ -130,6 +135,8 @@ export function desserializarDocumento(entrada) {
     rig: validarRig(doc.rig),
     sequencia: validarSequencia(doc.sequencia ?? TRACKS),
     midia: typeof doc.midia === "string" ? doc.midia : null,
+    // documento antigo não tinha grade: cai numa fixa em vez de quebrar
+    grade: gradeDeDoc(doc.grade),
   };
 }
 

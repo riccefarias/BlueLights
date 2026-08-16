@@ -39,11 +39,12 @@ festcar que a luz continua. Ver `docs/03-protocolo-serial.md`.
 
 ## Estado
 
-Sequenciador funcionando em `web/`: **edita a timeline**, **exporta `.fseq` V2**
-e **salva o setup em arquivo**. O motor roda headless e tem teste.
+Sequenciador funcionando em `web/`: carrega a faixa, **detecta o andamento e
+monta a grade a partir do áudio**, edita a timeline, salva o setup em arquivo e
+**exporta `.fseq` V2**. O motor roda headless e tem teste.
 Firmware não iniciado.
-Próximo passo: **cadastro de fixture com faixas rotuladas**, e depois o
-firmware base (ver `docs/07-roadmap.md`).
+Próximo passo: **value curves** e o **cadastro de fixture** (ver
+`docs/07-roadmap.md`).
 
 Hardware definido no [ADR 0010](docs/adr/0010-lilygo-t-can485-na-saida.md):
 LilyGO T-CAN485. Ponto aberto que importa: o RS485 da placa **não é isolado**

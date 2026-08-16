@@ -49,19 +49,38 @@ Hoje o exportador baixa o arquivo; falta a ponte até o cartão.
 
 ### 5. Áudio de verdade
 
-Detector de andamento **feito** — ver `06-sincronismo-audio.md`. Falta o que
-ele destranca:
+Detector, mapa de batidas e grade vinda do arquivo **feitos** — ver
+`11-grade.md`. Falta:
 
-- **Grade vinda do arquivo.** Hoje `DURATION = BPM × BARS` = 15 segundos, e a
-  duração devia vir do áudio. É o que impede sequenciar faixa de verdade
-- **Mapa de batidas** no lugar do BPM escalar, e o efeito falando em batida em
-  vez de segundo. Resolve rubato e mata a deriva por construção
-- Zoom na timeline, necessário assim que passar de 8 compassos
+- **Marcadores editáveis**: arrastar uma batida que o rastreador errou, com o
+  trecho entre âncoras interpolando
+- **Zoom na timeline.** Virou urgente: uma faixa de 4 minutos são 87 compassos
+  numa tela, e o bloco de 4 batidas fica com 3% de largura
 
-### 6. Value curves
+### 6. Value curves ← próximo
 
-Animar qualquer parâmetro ao longo do clip. Hoje o parâmetro é um número fixo
-por clip; a curva é o que separa show bom de pisca-pisca.
+Keyframes por parâmetro dentro do clip: o ponto A move suavemente pro ponto B.
+Hoje o parâmetro é um número fixo por clip, e a curva é o que separa show bom
+de pisca-pisca.
+
+O motor resolve `p` no instante t antes de chamar o efeito, então **nenhum
+efeito muda** — mesma forma das outras camadas.
+
+Cuidado que já está mapeado: nem todo parâmetro interpola. `gobo` é índice de
+catálogo (ir de estrela a espiral varreria a roda inteira), `div` é divisor
+rítmico, `hue` é circular e `dim` não é linear pro olho. O `PARAM_META` precisa
+ganhar o tipo de interpolação junto.
+
+### 7. Alerta de atropelamento
+
+Cabeça tem velocidade máxima, e o show padrão **já pede mais do que ela faz**:
+a varredura exige 297°/s de uma beam que faz 216, e 237°/s de uma wash que faz
+154. O resultado é movimento achatado e atrasado nas pontas, com o preview
+mentindo amplitude cheia.
+
+Checagem quadro a quadro comparando a velocidade exigida com a ficha da cabeça.
+Depende do cadastro (passo 1) trazer `pan: 540° em 2,5s` — é mais um campo da
+mesma tabela DMX.
 
 ## Já feito
 
@@ -78,6 +97,9 @@ por clip; a curva é o que separa show bom de pisca-pisca.
   `10-edicao-da-timeline.md`
 - **Salvar e carregar** o setup em `.blz.json`, com arquivo de verdade no
   desktop e load manual no celular. Ver ADR 0009
+- **Grade vinda do áudio**: detector de andamento sem dependência, mapa de
+  batidas por programação dinâmica, e o efeito falando em batida em vez de
+  segundo. Ver `11-grade.md`
 
 ## Pendências que o exportador deixou
 

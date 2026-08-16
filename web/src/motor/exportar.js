@@ -5,7 +5,7 @@
    ============================================================ */
 
 import { RIG_PADRAO } from "../modelo/rig.js";
-import { DURATION, FPS, TRACKS } from "../modelo/sequencia.js";
+import { FPS, TRACKS, gradePadrao } from "../modelo/sequencia.js";
 import { derive, impressaoDoRig } from "./derivar.js";
 import { renderFrame } from "./render.js";
 import { serializarFrame } from "./canais.js";
@@ -16,9 +16,12 @@ import { escreverFseq } from "./fseq.js";
  * @returns {{canais:number,quadros:number,dados:Uint8Array,stepTimeMs:number}}
  */
 export function renderizarSequencia({
-  rig = RIG_PADRAO, tracks = TRACKS, fps = FPS,
-  t0 = 0, t1 = DURATION, master = 1, offset = 0,
+  rig = RIG_PADRAO, tracks = TRACKS, fps = FPS, grade = gradePadrao(),
+  t0 = 0, t1 = null, master = 1, offset = 0,
 } = {}) {
+  /* Quem manda na duração é a grade, que por sua vez vem do arquivo de
+     áudio. Antes saía de `BPM × BARS` e o show inteiro tinha 15 segundos. */
+  if (t1 == null) t1 = grade.duracao;
   const d = derive(rig);
   const stepTimeMs = Math.round(1000 / fps);
   if (stepTimeMs < 1 || stepTimeMs > 255)
@@ -32,10 +35,10 @@ export function renderizarSequencia({
     // O tempo do quadro vem da grade, nunca de acumular passo: somar
     // 1/40 seiscentas vezes acumula erro de ponto flutuante.
     const t = t0 + i / fps;
-    const frame = renderFrame(d, t + offset, master, tracks);
+    const frame = renderFrame(d, t + offset, master, tracks, grade);
     serializarFrame(d, frame, dados.subarray(i * canais, (i + 1) * canais));
   }
-  return { canais, quadros, dados, stepTimeMs, derivado: d };
+  return { canais, quadros, dados, stepTimeMs, derivado: d, grade };
 }
 
 /**

@@ -7,6 +7,7 @@ import {
 import { RIG_PADRAO } from "../src/modelo/rig.js";
 import { TRACKS } from "../src/modelo/sequencia.js";
 import { derive } from "../src/motor/derivar.js";
+import { gradeDeBatidas } from "../src/modelo/grade.js";
 
 test("ida e volta preserva o croqui e o que ele deriva", () => {
   const movido = RIG_PADRAO.map(i => i.id === "f1" ? { ...i, x: 300, y: 600, co: "GRB" } : i);
@@ -101,4 +102,19 @@ test("id existente não é sobrescrito nem colide com o gerado", () => {
   assert.notEqual(doc.sequencia[1].id, "t1");
   assert.equal(doc.sequencia[0].clips[0].id, "c1");
   assert.notEqual(doc.sequencia[1].clips[0].id, "c1");
+});
+
+test("a grade viaja no documento, com o mapa de batidas", () => {
+  const grade = gradeDeBatidas([0, 0.5, 1.02, 1.5, 2.01], 3);
+  const doc = desserializarDocumento(paraJson(serializarDocumento({ rig: RIG_PADRAO, grade })));
+  assert.equal(doc.grade.batidas.length, 5);
+  assert.ok(Math.abs(doc.grade.duracao - 3) < 1e-3);
+  // o passo irregular sobrevive — é o que carrega o rubato
+  assert.ok(Math.abs(doc.grade.duracaoDaBatida(0.7) - 0.52) < 1e-3);
+});
+
+test("documento antigo sem grade cai numa fixa em vez de quebrar", () => {
+  const doc = desserializarDocumento({ tipo: TIPO, v: 1, rig: RIG_PADRAO });
+  assert.ok(doc.grade.batidas.length > 2);
+  assert.equal(doc.grade.confianca, 0, "marcada como não detectada");
 });
