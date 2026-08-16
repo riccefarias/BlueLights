@@ -118,6 +118,11 @@ e afins podem virar fixture controlada por evento. Anotado com protocolos e
 ressalvas em [12-bluetooth-ble.md](12-bluetooth-ble.md) — testar no futuro,
 começando por Web Bluetooth no browser antes de mexer no firmware.
 
+Fumaça: jatos curtos resolvem por ora; se um dia fabricar a máquina de 2
+estágios (standby + boost, interlock local, telemetria pelo CAN), o desenho
+está em [13-maquina-de-fumaca.md](13-maquina-de-fumaca.md) — junto com o
+lookahead de boost no motor e o alerta de duty cycle, ambos futuros.
+
 ## Trocas pra quando crescer
 
 Nenhuma importa nos ~18 nodes atuais:
