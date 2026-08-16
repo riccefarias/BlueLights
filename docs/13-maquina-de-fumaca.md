@@ -44,6 +44,20 @@ Arquitetura:
   máquina reporta temperatura/ready de volta. DMX pra pedir, CAN pra
   responder — fecha o ciclo que o DMX sozinho não fecha.
 
+### Peças pro aquecedor (avaliado em 2026-08)
+
+- **Não serve**: manta de aquecedor de banco automotivo — 30–60W espalhados
+  pra chegar a 40–50°C, isolação que derrete muito antes dos ~250–300°C que
+  a vaporização exige. Oposto térmico do necessário.
+- **Melhor caminho**: bloco de **resistência de reposição de máquina de
+  fumaça** (ML, 400/900/1500W) — serpentina de fluido e furo de termostato já
+  no alumínio. Dois blocos = os dois estágios prontos.
+- Alternativas DIY: resistência de cartucho 220V num bloco usinado (a
+  serpentina vira problema seu) ou base de ferro de passar (~1000W).
+- **12V não rola**: 400W a 12V = 33A. Máquina de fumaça é AC — pendura no
+  inversor que o roadmap já prevê pras cabeças AC. (Vela aquecedora de
+  diesel chega na temperatura, mas um cluster bebe 40A+ — mesmo beco.)
+
 ### Segurança inegociável
 
 Resistência na rede elétrica + fluido quente: **termostato mecânico de
