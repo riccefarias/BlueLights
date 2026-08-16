@@ -1280,6 +1280,35 @@ export default function App() {
   const [insercao, setInsercao] = useState(null);   // {ti, t} — onde criar bloco
   const [copiado, setCopiado] = useState(null);     // {trecho, label, prox}
   const [msel, setMsel] = useState([]);             // ids na seleção múltipla
+
+  /* Tamanho dos painéis do Estúdio, lembrado no navegador. A calha da
+     timeline anda junto com a coluna do Rig — é a mesma variável. */
+  const [painel, setPainel] = useState(() => {
+    const padrao = { rig: 206, insp: 226, tl: 250 };
+    try { return { ...padrao, ...JSON.parse(localStorage.getItem("bl-paineis") || "{}") }; }
+    catch { return padrao; }
+  });
+  useEffect(() => {
+    localStorage.setItem("bl-paineis", JSON.stringify(painel));
+  }, [painel]);
+  const LIMITES = { rig: [140, 420], insp: [170, 480], tl: [120, 620] };
+  const splitDown = qual => e => {
+    e.preventDefault();
+    const ini = { x: e.clientX, y: e.clientY, v: painel[qual] };
+    const [min, max] = LIMITES[qual];
+    const move = ev => {
+      const d = qual === "rig" ? ev.clientX - ini.x
+              : qual === "insp" ? ini.x - ev.clientX
+              : ini.y - ev.clientY;                    // timeline cresce pra cima
+      setPainel(pn => ({ ...pn, [qual]: Math.max(min, Math.min(max, ini.v + d)) }));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
   const [novaTrilha, setNovaTrilha] = useState(false);
   const [grade, setGrade] = useState(gradePadrao);
   const [analisando, setAnalisando] = useState(false);
@@ -1945,7 +1974,9 @@ export default function App() {
   const tc = `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(Math.floor(t % 60)).padStart(2, "0")}.${String(Math.floor((t % 1) * 100)).padStart(2, "0")}`;
 
   return (
-    <div className="app" data-mode={mode}>
+    <div className="app" data-mode={mode}
+      style={{ "--w-rig": `${painel.rig}px`, "--w-insp": `${painel.insp}px`,
+               "--h-tl": `${painel.tl}px` }}>
       <style>{CSS}</style>
 
       <header className="hd">
@@ -1992,6 +2023,8 @@ export default function App() {
             <div className="pane-t">Rig</div>
             <RigList d={d} frame={frameFinal} sel={pick} onAdd={adicionarNaLinha} onPick={id => { setPick(id); setView("croqui"); }} />
           </aside>
+          <div className="split" onPointerDown={splitDown("rig")}
+            title="Arraste pra redimensionar o Rig" />
           <main className="pv">
             <div className="pv-head">
               {viewToggle}
@@ -2001,6 +2034,8 @@ export default function App() {
             </div>
             {stage}
           </main>
+          <div className="split" onPointerDown={splitDown("insp")}
+            title="Arraste pra redimensionar o painel de efeito" />
           <aside className="insp">
             <div className="pane-t">{croqui ? "Equipamento" : "Efeito"}</div>
             {croqui
@@ -2009,6 +2044,8 @@ export default function App() {
                   labelFor={labelFor} d={d} rig={rig} ed={ed} />}
           </aside>
         </div>
+        <div className="split-h" onPointerDown={splitDown("tl")}
+          title="Arraste pra redimensionar a timeline" />
         <Timeline t={t} tracks={tracks} grade={grade} sel={sel} setSel={setSel} msel={msel} onOpen={pickClip} scrub={scrub}
           labelFor={labelFor} peaks={peaks} ed={ed} insercao={insercao} avisos={avisos} />
       </>)}
@@ -2179,7 +2216,12 @@ button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .ar-b:disabled{opacity:.4;cursor:not-allowed}
 .ar-c{padding:0 13px 12px;flex-wrap:wrap}
 
-.body{flex:1;display:grid;grid-template-columns:206px 1fr 226px;min-height:0}
+.body{flex:1;display:grid;min-height:0;
+  grid-template-columns:var(--w-rig,206px) 6px 1fr 6px var(--w-insp,226px)}
+.split{cursor:col-resize;touch-action:none}
+.split:hover,.split:active{background:#1C2534}
+.split-h{flex:0 0 6px;margin:-3px 0;z-index:5;cursor:row-resize;touch-action:none}
+.split-h:hover,.split-h:active{background:#1C2534}
 .pane-t{font-family:'Archivo',sans-serif;font-size:9.5px;font-weight:700;letter-spacing:.19em;
   text-transform:uppercase;color:var(--chrome);padding:11px 13px 8px;display:block}
 .rig{background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding-bottom:12px}
@@ -2268,7 +2310,8 @@ button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
   border:1px solid #3A1622;color:#FF7A9C;font-size:11.5px;font-weight:600}
 .del:hover{background:#1E0D14}
 
-.tl{flex:0 0 250px;display:grid;grid-template-columns:206px 1fr;border-top:1px solid var(--line);
+.tl{flex:0 0 var(--h-tl,250px);display:grid;border-top:1px solid var(--line);
+  grid-template-columns:calc(var(--w-rig,206px) + 6px) 1fr;
   background:var(--panel);min-height:0;position:relative}
 .tl-c{flex:1;grid-template-columns:112px 1fr;border-top:none}
 .tl-gut{border-right:1px solid var(--line);overflow:hidden;padding-bottom:12px}
