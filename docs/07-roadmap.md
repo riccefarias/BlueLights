@@ -113,6 +113,11 @@ mesma tabela DMX.
 A T-CAN485 traz um barramento **CAN** que ninguém pediu. Não usar agora, mas é
 a porta pra luz reagir a RPM, porta aberta ou farol alto um dia.
 
+E traz **Bluetooth 4.2** (Classic + BLE) no ESP32: shining masks, bonés de LED
+e afins podem virar fixture controlada por evento. Anotado com protocolos e
+ressalvas em [12-bluetooth-ble.md](12-bluetooth-ble.md) — testar no futuro,
+começando por Web Bluetooth no browser antes de mexer no firmware.
+
 ## Trocas pra quando crescer
 
 Nenhuma importa nos ~18 nodes atuais:
