@@ -11,33 +11,33 @@ import { serializarFrame, goboParaByte, grotParaByte, rgbw } from "../src/motor/
 
 test("numeração de canais vem da posição: pixels por Y depois X, heads por X", () => {
   const d = derive(RIG_PADRAO);
-  // 6 faróis × 3 nodes × 3 bytes = 54 canais de pixel
+  // 6 faróis × 1 node (medido na bancada) × 3 bytes = 18 canais de pixel
   assert.equal(d.chan.f1, 1);
-  assert.equal(d.chan.f2, 10);
-  assert.equal(d.chan.f3, 19);
-  assert.equal(d.chan.f4, 28);   // caixa inferior vem depois, é Y maior
-  assert.equal(d.chan.f6, 46);
+  assert.equal(d.chan.f2, 4);
+  assert.equal(d.chan.f3, 7);
+  assert.equal(d.chan.f4, 10);   // caixa inferior vem depois, é Y maior
+  assert.equal(d.chan.f6, 16);
   // heads começam onde o pixel acabou, ordenadas por X
-  assert.equal(d.chan.h1, 55);
-  assert.equal(d.chan.h2, 55 + PROFILES["beam-16"].ch.length);
-  assert.equal(d.chan.h3, 71 + PROFILES["wash-12"].ch.length);
-  assert.equal(d.totalCh, 98);
-  assert.equal(d.totalNodes, 18);
+  assert.equal(d.chan.h1, 19);
+  assert.equal(d.chan.h2, 19 + PROFILES["beam-16"].ch.length);
+  assert.equal(d.chan.h3, 35 + PROFILES["wash-12"].ch.length);
+  assert.equal(d.totalCh, 62);
+  assert.equal(d.totalNodes, 6);
 });
 
 test("mover um farol no croqui renumera sem tocar em sequência", () => {
   const movido = RIG_PADRAO.map(i => i.id === "f1" ? { ...i, y: 600 } : i);
   const d = derive(movido);
   assert.equal(d.chan.f2, 1);            // f1 saiu da frente
-  assert.equal(d.chan.f1, 46);           // e foi pro fim dos pixels
-  assert.equal(d.totalCh, 98);           // o total não muda
+  assert.equal(d.chan.f1, 16);           // e foi pro fim dos pixels
+  assert.equal(d.totalCh, 62);           // o total não muda
 });
 
 test("node RGBW ocupa 4 bytes, não 3", () => {
   const rig = RIG_PADRAO.map(i => i.id === "f1" ? { ...i, co: "RGBW" } : i);
   const d = derive(rig);
-  assert.equal(d.chan.f2, 1 + 3 * 4);
-  assert.equal(d.totalCh, 98 + 3);
+  assert.equal(d.chan.f2, 1 + 1 * 4);
+  assert.equal(d.totalCh, 62 + 1);
 });
 
 test("grupos saem da média de Y, sem lista manual de membros", () => {
@@ -130,7 +130,7 @@ test("master zero apaga tudo que é luz", () => {
   const d = derive(RIG_PADRAO);
   const frame = renderFrame(d, BEAT * 2, 0, TRACKS);
   const b = serializarFrame(d, frame);
-  const pixelEmCima = b.subarray(0, 54);
+  const pixelEmCima = b.subarray(0, 18);
   assert.ok(pixelEmCima.every(v => v === 0), "nenhum pixel aceso");
   const chs = PROFILES["beam-16"].ch;
   assert.equal(b[d.chan.h1 - 1 + chs.indexOf("dim")], 0, "dimmer da head no chão");

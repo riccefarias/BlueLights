@@ -22,7 +22,7 @@ function padrao(canais, quadros) {
 }
 
 test("cabeçalho V2 tem os campos nos offsets do FPP", async () => {
-  const canais = 98, quadros = 40;
+  const canais = 62, quadros = 40;
   const f = await escreverFseq({ canais, quadros, dados: padrao(canais, quadros),
     stepTimeMs: 25, compressao: "nenhuma", uniqueId: ID });
   const dv = new DataView(f.buffer);
@@ -81,7 +81,7 @@ test("bloco zlib é RFC1950, que é o que o deflateInit() do FPP espera", async 
 
 test("ida e volta preserva byte a byte, comprimido ou não", async () => {
   for (const compressao of ["nenhuma", "zlib"]) {
-    const canais = 98, quadros = 137;              // primo, pra não fechar bloco redondo
+    const canais = 62, quadros = 137;              // primo, pra não fechar bloco redondo
     const dados = padrao(canais, quadros);
     const f = await escreverFseq({ canais, quadros, dados, compressao, uniqueId: ID,
       midia: "faixa07.mp3" });
@@ -111,7 +111,7 @@ test("luz é repetitiva: zlib tem que encolher de verdade", async () => {
 test("o show padrão exporta com a duração e a taxa certas", async () => {
   const f = await exportarFseq({ midia: "faixa07.mp3" });
   const seq = await lerFseq(f);
-  assert.equal(seq.canais, 98);
+  assert.equal(seq.canais, 62);
   assert.equal(seq.quadros, Math.round(DURATION * FPS));
   assert.equal(seq.stepTimeMs, 25, "40fps = 25ms de passo");
   assert.equal(seq.quadros * seq.stepTimeMs, Math.round(DURATION * 1000));
@@ -134,7 +134,7 @@ test("o quadro exportado é o mesmo que o preview desenha", async () => {
 test("o fseq exportado carrega o carimbo do croqui", async () => {
   const seq = await lerFseq(await exportarFseq());
   const atual = impressaoDoRig(derive(RIG_PADRAO));
-  assert.equal(seq.rig.ch, 98);
+  assert.equal(seq.rig.ch, 62);
   assert.equal(seq.rig.fp, atual.fp);
   assert.deepEqual(conferirRig(seq, atual), { ok: true, aviso: null });
 });
@@ -146,11 +146,11 @@ test("mudança que desloca canal reprova o arquivo antigo", async () => {
   const outroPerfil = RIG_PADRAO.map(i => i.id === "h2" ? { ...i, pf: "beam-16" } : i);
   const r1 = conferirRig(seq, impressaoDoRig(derive(outroPerfil)));
   assert.equal(r1.ok, false);
-  assert.match(r1.aviso, /98 canais.*102/);
+  assert.match(r1.aviso, /62 canais.*66/);
 
-  // farol de 3 pra 1 node: mesmo tipo de estrago, sem trocar equipamento
-  const menosNodes = RIG_PADRAO.map(i => i.id === "f1" ? { ...i, n: 1 } : i);
-  assert.equal(conferirRig(seq, impressaoDoRig(derive(menosNodes))).ok, false);
+  // farol de 1 pra 3 nodes: mesmo tipo de estrago, sem trocar equipamento
+  const maisNodes = RIG_PADRAO.map(i => i.id === "f1" ? { ...i, n: 3 } : i);
+  assert.equal(conferirRig(seq, impressaoDoRig(derive(maisNodes))).ok, false);
 
   // reordenar no croqui mantém o total de canais mas troca o significado
   const trocado = RIG_PADRAO.map(i => i.id === "h1" ? { ...i, x: 900 } : i);
@@ -212,8 +212,8 @@ test("remover um clip apaga a luz daquele trecho", async () => {
   const seq = await lerFseq(await exportarFseq({ tracks: semStrobo }));
   const cheio = await lerFseq(await exportarFseq());
   const q = Math.round(BEAT * 26 * FPS);                 // dentro do trecho removido
-  const canaisSup = [...quadroDe(seq, q).subarray(0, 27)];   // f1..f3, caixa superior
+  const canaisSup = [...quadroDe(seq, q).subarray(0, 9)];    // f1..f3, caixa superior
   assert.ok(canaisSup.every(v => v === 0), "caixa superior apagada sem o clip");
-  assert.ok([...quadroDe(cheio, q).subarray(0, 27)].some(v => v > 0),
+  assert.ok([...quadroDe(cheio, q).subarray(0, 9)].some(v => v > 0),
     "e acesa com ele — senão o teste não prova nada");
 });

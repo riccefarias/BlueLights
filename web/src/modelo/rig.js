@@ -65,7 +65,9 @@ export const COLOR_ORDER = ["RGB", "GRB", "BRG", "RGBW"];
 
 export const KIND = {
   cab:   { label: "Caixa",       nodes: 0,  w: 420, h: 150, pixel: false },
-  farol: { label: "Farol AJK",   nodes: 3,  w: 88,  h: 24,  pixel: true },
+  /* Medido na bancada: as 3 lentes do AJK são o mesmo pixel — farol = 1
+     node, 3 canais. O toggle 1/3 fica no inspector pra outro modelo. */
+  farol: { label: "Farol AJK",   nodes: 1,  w: 88,  h: 24,  pixel: true },
   fita:  { label: "Fita",        nodes: 12, w: 240, h: 14,  pixel: true },
   head:  { label: "Moving head", nodes: 0,  w: 32,  h: 26,  pixel: false, dmx: 14 },
 };
@@ -81,12 +83,12 @@ export function bytesPorNode(it) { return ordemDeCor(it).length; }
 export const RIG_PADRAO = [
   { id: "cab-sup", k: "cab",   lb: "Caixa superior", x: 500, y: 252, w: 420, h: 150 },
   { id: "cab-inf", k: "cab",   lb: "Caixa inferior", x: 500, y: 424, w: 420, h: 150 },
-  { id: "f1", k: "farol", lb: "Sup · Kaos L", x: 374, y: 310, n: 3 },
-  { id: "f2", k: "farol", lb: "Sup · Bravox", x: 500, y: 310, n: 3 },
-  { id: "f3", k: "farol", lb: "Sup · Kaos R", x: 626, y: 310, n: 3 },
-  { id: "f4", k: "farol", lb: "Inf · Kaos L", x: 374, y: 482, n: 3 },
-  { id: "f5", k: "farol", lb: "Inf · Bravox", x: 500, y: 482, n: 3 },
-  { id: "f6", k: "farol", lb: "Inf · Kaos R", x: 626, y: 482, n: 3 },
+  { id: "f1", k: "farol", lb: "Sup · Kaos L", x: 374, y: 310, n: 1 },
+  { id: "f2", k: "farol", lb: "Sup · Bravox", x: 500, y: 310, n: 1 },
+  { id: "f3", k: "farol", lb: "Sup · Kaos R", x: 626, y: 310, n: 1 },
+  { id: "f4", k: "farol", lb: "Inf · Kaos L", x: 374, y: 482, n: 1 },
+  { id: "f5", k: "farol", lb: "Inf · Bravox", x: 500, y: 482, n: 1 },
+  { id: "f6", k: "farol", lb: "Inf · Kaos R", x: 626, y: 482, n: 1 },
   { id: "h1", k: "head", lb: "Head esquerda", x: 220, y: 76, pf: "beam-16" },
   { id: "h2", k: "head", lb: "Head centro",   x: 500, y: 76, pf: "wash-12" },
   { id: "h3", k: "head", lb: "Head direita",  x: 780, y: 76, pf: "beam-16" },

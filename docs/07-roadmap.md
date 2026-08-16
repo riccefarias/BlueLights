@@ -138,7 +138,7 @@ browser + bancada antes do firmware) está em
 
 ## Trocas pra quando crescer
 
-Nenhuma importa nos ~18 nodes atuais:
+Nenhuma importa nos 6 nodes atuais (farol = 1 pixel, medido):
 
 - Timeline em canvas em vez de DOM (blocos como `div` morrem lá pelos 500)
 - Render em Web Worker

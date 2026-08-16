@@ -180,6 +180,10 @@ function Stage({ rig, frame, edit, sel, onPick, onMove, chan }) {
   const ref = useRef(null);
   const view = useRef({ s: 1, ox: 0, oy: 0 });
   const drag = useRef(null);
+  /* Câmera do palco: z=1 é o letterbox de sempre; acima disso o palco
+     amplia em volta de (cx, cy). Vive num ref — gesto redesenha na mão,
+     sem re-render do React por frame de pinça. */
+  const cam = useRef({ z: 1, cx: VW / 2, cy: VH / 2 });
 
   const draw = useCallback(() => {
     const cv = ref.current; if (!cv) return;
@@ -190,8 +194,9 @@ function Stage({ rig, frame, edit, sel, onPick, onMove, chan }) {
     const g = cv.getContext("2d");
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    const s = Math.min(W / VW, H / VH);
-    const ox = (W - VW * s) / 2, oy = (H - VH * s) / 2;
+    const { z, cx, cy } = cam.current;
+    const s = Math.min(W / VW, H / VH) * z;
+    const ox = W / 2 - cx * s, oy = H / 2 - cy * s;
     view.current = { s, ox, oy };
     const X = v => ox + v * s, Y = v => oy + v * s, S = v => v * s;
 
@@ -323,6 +328,14 @@ function Stage({ rig, frame, edit, sel, onPick, onMove, chan }) {
         g.fillText(`ch${chan[it.id] ?? "?"} · ${n}n`, x, y - S(7));
       }
     });
+
+    if (cam.current.z > 1.01) {
+      g.fillStyle = "rgba(143,180,255,.75)";
+      g.font = "600 11px 'IBM Plex Mono',monospace";
+      g.textAlign = "right";
+      g.fillText(`×${cam.current.z.toFixed(1)}`, W - 8, 16);
+      g.textAlign = "left";
+    }
   }, [rig, frame, edit, sel, chan]);
 
   useEffect(draw, [draw]);
@@ -338,31 +351,109 @@ function Stage({ rig, frame, edit, sel, onPick, onMove, chan }) {
     return { x: (e.clientX - r.left - ox) / s, y: (e.clientY - r.top - oy) / s };
   };
 
+  /* Recentraliza a câmera pra que o ponto virtual (vx,vy) fique sob o
+     ponto de tela (px,py). É a mesma conta do zoom ancorado da timeline:
+     o que está sob o dedo não anda. */
+  const mira = (vx, vy, px, py) => {
+    const cv = ref.current;
+    const s = Math.min(cv.clientWidth / VW, cv.clientHeight / VH) * cam.current.z;
+    cam.current.cx = Math.max(0, Math.min(VW, vx - (px - cv.clientWidth / 2) / s));
+    cam.current.cy = Math.max(0, Math.min(VH, vy - (py - cv.clientHeight / 2) / s));
+    if (cam.current.z <= 1.01) {           // encaixou de volta: letterbox puro
+      cam.current.z = 1; cam.current.cx = VW / 2; cam.current.cy = VH / 2;
+    }
+    draw();
+  };
+
+  // Pinça: zoom + pan de dois dedos, ancorado no meio da pinça.
+  useEffect(() => {
+    const el = ref.current; if (!el) return;
+    let pinca = null;
+    const dist = ts => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
+    const meio = ts => {
+      const r = el.getBoundingClientRect();
+      return { x: (ts[0].clientX + ts[1].clientX) / 2 - r.left,
+               y: (ts[0].clientY + ts[1].clientY) / 2 - r.top };
+    };
+    const td = e => {
+      if (e.touches.length !== 2) return;
+      drag.current = null;                 // segundo dedo cancela arrasto de item
+      const m = meio(e.touches);
+      const { s, ox, oy } = view.current;
+      pinca = { d: dist(e.touches), z: cam.current.z,
+                vx: (m.x - ox) / s, vy: (m.y - oy) / s };
+    };
+    const tm = e => {
+      if (!pinca || e.touches.length !== 2) return;
+      e.preventDefault();
+      cam.current.z = Math.max(1, Math.min(8, pinca.z * dist(e.touches) / pinca.d));
+      const m = meio(e.touches);
+      mira(pinca.vx, pinca.vy, m.x, m.y);
+    };
+    const tu = e => { if (e.touches.length < 2) pinca = null; };
+    // wheel também aqui: o onWheel do React é passivo e o preventDefault
+    // não seguraria o zoom nativo da página (mesmo caso da timeline).
+    const wh = e => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      const p = toV(e);
+      cam.current.z = Math.max(1, Math.min(8, cam.current.z * (e.deltaY < 0 ? 1.18 : 1 / 1.18)));
+      mira(p.x, p.y, e.clientX - r.left, e.clientY - r.top);
+    };
+    el.addEventListener("touchstart", td, { passive: true });
+    el.addEventListener("touchmove", tm, { passive: false });
+    el.addEventListener("touchend", tu, { passive: true });
+    el.addEventListener("touchcancel", tu, { passive: true });
+    el.addEventListener("wheel", wh, { passive: false });
+    return () => {
+      el.removeEventListener("touchstart", td);
+      el.removeEventListener("touchmove", tm);
+      el.removeEventListener("touchend", tu);
+      el.removeEventListener("touchcancel", tu);
+      el.removeEventListener("wheel", wh);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draw]);
+
+  const reset = () => { cam.current = { z: 1, cx: VW / 2, cy: VH / 2 }; draw(); };
+
   const down = (e) => {
-    if (!edit) return;
     const p = toV(e);
-    const hit = [...rig].reverse().find(it => {
+    const hit = edit && [...rig].reverse().find(it => {
       const { w, h } = sizeOf(it);
       return Math.abs(p.x - it.x) < w / 2 && Math.abs(p.y - it.y) < Math.max(h / 2, 14);
     });
-    onPick(hit ? hit.id : null);
+    if (edit) onPick(hit ? hit.id : null);
     if (hit) {
       drag.current = { id: hit.id, dx: p.x - hit.x, dy: p.y - hit.y };
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } else if (cam.current.z > 1) {        // vazio com zoom: arrasta a câmera
+      drag.current = { pan: true, px: e.clientX, py: e.clientY,
+                       cx: cam.current.cx, cy: cam.current.cy };
       e.currentTarget.setPointerCapture(e.pointerId);
     }
   };
   const move = (e) => {
-    if (!drag.current) return;
+    const dr = drag.current; if (!dr) return;
+    if (dr.pan) {
+      const { s } = view.current;
+      cam.current.cx = Math.max(0, Math.min(VW, dr.cx - (e.clientX - dr.px) / s));
+      cam.current.cy = Math.max(0, Math.min(VH, dr.cy - (e.clientY - dr.py) / s));
+      draw();
+      return;
+    }
     const p = toV(e);
     const snap = v => Math.round(v / 2) * 2;
-    onMove(drag.current.id,
-      Math.max(0, Math.min(VW, snap(p.x - drag.current.dx))),
-      Math.max(0, Math.min(VH, snap(p.y - drag.current.dy))));
+    onMove(dr.id,
+      Math.max(0, Math.min(VW, snap(p.x - dr.dx))),
+      Math.max(0, Math.min(VH, snap(p.y - dr.dy))));
   };
   const up = () => { drag.current = null; };
 
   return <canvas ref={ref} className={`stage ${edit ? "stage-e" : ""}`}
-    onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} />;
+    onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
+    onDoubleClick={reset} />;
 }
 
 /* ============================================================
@@ -890,8 +981,8 @@ function CroquiInsp({ item, chan, manual, bytes, onCanal, onSoltar, onGravar, on
               onClick={() => onEdit(item.id, { co: o })}>{o}</button>))}
         </div>
         {item.k === "farol" && (
-          <div className="hint">1 node = farol inteiro numa cor. 3 nodes = cada lente independente.
-            É o teste que decide quando os faróis chegarem.</div>)}
+          <div className="hint">Medido na bancada: o AJK é 1 node — as 3 lentes são o mesmo
+            pixel. O 3 fica aqui pra farol de outro modelo.</div>)}
       </>)}
 
       {item.k === "head" && (<>
