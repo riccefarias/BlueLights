@@ -54,9 +54,15 @@ Arquitetura:
   no alumínio. Dois blocos = os dois estágios prontos.
 - Alternativas DIY: resistência de cartucho 220V num bloco usinado (a
   serpentina vira problema seu) ou base de ferro de passar (~1000W).
-- **12V não rola**: 400W a 12V = 33A. Máquina de fumaça é AC — pendura no
-  inversor que o roadmap já prevê pras cabeças AC. (Vela aquecedora de
-  diesel chega na temperatura, mas um cluster bebe 40A+ — mesmo beco.)
+- **12V direto não rola — mas não pelos watts**: inversor não cria energia
+  (900W AC ≈ 80A saindo da bateria do mesmo jeito, + perdas). O que ele muda
+  é ONDE a corrente alta existe: um trecho único bateria→inversor com cabo
+  grosso, e dali pra frente 220V a 4A — fio fino, e chaveamento AC onde SSR
+  zero-crossing é barato (interromper 80A DC é arco que não se apaga e
+  contator caro). E resistência de 250°C em 220V é commodity; em 12V é peça
+  exótica. Com 3 SD3000 no carro, o som já puxa uma ordem de grandeza a
+  mais — a fumaça (ciclada, média bem menor que o pico) só precisa entrar
+  na soma do dimensionamento do inversor junto com as cabeças AC.
 
 ### Segurança inegociável
 
