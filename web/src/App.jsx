@@ -433,10 +433,15 @@ function Stage({ rig, frame, edit, sel, onPick, onMove, chan }) {
       return Math.abs(p.x - it.x) < w / 2 && Math.abs(p.y - it.y) < Math.max(h / 2, 14);
     });
     if (edit) onPick(hit ? hit.id : null);
-    if (hit) {
+    /* Com zoom, no touch, só a fixture JÁ selecionada arrasta — o resto do
+       dedo navega. Senão, tentar olhar o layout ampliado sai reorganizando
+       o rig (e mover fixture renumera canal). Mouse mira fino e mantém o
+       arrasto direto; sem zoom não há pra onde navegar, então idem. */
+    const pega = hit && (e.pointerType === "mouse" || cam.current.z <= 1 || hit.id === sel);
+    if (pega) {
       drag.current = { id: hit.id, dx: p.x - hit.x, dy: p.y - hit.y };
       e.currentTarget.setPointerCapture(e.pointerId);
-    } else if (cam.current.z > 1) {        // vazio com zoom: arrasta a câmera
+    } else if (cam.current.z > 1) {        // resto com zoom: arrasta a câmera
       drag.current = { pan: true, px: e.clientX, py: e.clientY,
                        cx: cam.current.cx, cy: cam.current.cy };
       e.currentTarget.setPointerCapture(e.pointerId);
