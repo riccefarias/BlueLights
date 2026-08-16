@@ -11,8 +11,9 @@ import { POR_COMPASSO, gradeDeBatidas, gradeFixa, moverBatida } from "./modelo/g
 import { rastrearBatidas } from "./motor/batidas.js";
 import { paraMono } from "./motor/bpm.js";
 import {
-  acharClip, adicionarTrilha, ajustarKf, ajustarParam, curvarParam, inserirClip,
-  moverClip, redimensionarClip, removerClip, removerTrilha, retargetTrilha, trocarEfeito,
+  acharClip, adicionarTrilha, ajustarKf, ajustarParam, colarTrecho, copiarTrecho,
+  curvarParam, duplicarClip, duplicarTrilha, inserirClip, moverClip,
+  redimensionarClip, removerClip, removerTrilha, retargetTrilha, trocarEfeito,
 } from "./modelo/edicao.js";
 import { capsOf, derive, responders } from "./motor/derivar.js";
 import { renderFrame } from "./motor/render.js";
@@ -498,7 +499,7 @@ function Stage({ rig, frame, edit, sel, onPick, onMove, chan }) {
    PAINÉIS
    ============================================================ */
 
-function Timeline({ t, tracks, grade, sel, setSel, onOpen, scrub, compact, labelFor, peaks, ed, insercao, avisos }) {
+function Timeline({ t, tracks, grade, sel, setSel, msel, onOpen, scrub, compact, labelFor, peaks, ed, insercao, avisos }) {
   const pct = v => `${(v / grade.duracao) * 100}%`;
   const drag = useRef(null);
   const sc = useRef(null);
@@ -593,7 +594,11 @@ function Timeline({ t, tracks, grade, sel, setSel, onOpen, scrub, compact, label
      estado e o Ctrl+Z passa a não fazer nada visível. */
   const pegar = (e, ti, clip, borda) => {
     e.stopPropagation();
+    /* Ctrl/Cmd+clique: entra/sai da seleção múltipla (o trecho que o
+       Ctrl+C copia inteiro). Não arrasta nem abre nada. */
+    if ((e.ctrlKey || e.metaKey) && !borda) { ed.alternarSel(clip.id); return; }
     setSel(clip.id);
+    ed.limparSel();
     const linha = e.currentTarget.closest(".tl-row");
     const w = linha?.getBoundingClientRect().width || 1;
     // Dedo treme mais que mouse: no touch a folga antes de virar arrasto
@@ -713,7 +718,7 @@ function Timeline({ t, tracks, grade, sel, setSel, onOpen, scrub, compact, label
                 <div className="tl-ins" style={{ left: pct(insercao.t) }} />)}
               {tr.clips.map(c => (
                 <div key={c.id}
-                  className={`clip ${sel === c.id ? "sel" : ""} ${t >= c.t0 && t < c.t1 ? "act" : ""} ${avisos?.[c.id] ? "avi" : ""}`}
+                  className={`clip ${sel === c.id ? "sel" : ""} ${msel?.includes(c.id) ? "msel" : ""} ${t >= c.t0 && t < c.t1 ? "act" : ""} ${avisos?.[c.id] ? "avi" : ""}`}
                   style={{ left: pct(c.t0), width: pct(c.t1 - c.t0), "--fx": EFFECTS[c.fx].color }}
                   onPointerDown={e => pegar(e, ti, c, null)}
                   onPointerMove={arrastar} onPointerUp={soltar} onPointerCancel={soltar}>
@@ -784,7 +789,7 @@ function CicloCtl({ k, v, m, ed }) {
   );
 }
 
-function EffectInsp({ selClip, insercao, tracks, labelFor, d, rig, ed, aviso }) {
+function EffectInsp({ selClip, insercao, tracks, labelFor, d, rig, ed, aviso, copiado }) {
   const alvoTrilha = selClip?.track || (insercao ? tracks[insercao.ti] : null);
   if (!alvoTrilha)
     return <div className="empty">Escolha um bloco na linha do tempo,
@@ -870,6 +875,12 @@ function EffectInsp({ selClip, insercao, tracks, labelFor, d, rig, ed, aviso }) 
 
     <div className="sec">{inserindo ? "Criar qual efeito" : "Trocar o efeito"}</div>
     <div className="fxl">
+      {inserindo && copiado && (
+        <button className="fxr yes colar" onClick={ed.colar}>
+          <span className="fxd" style={{ background: "#6FD3B4" }} />
+          <span className="fxn">Colar "{copiado.label}"</span>
+          <span className="mono fxc">{(copiado.trecho.span / BEAT).toFixed(1)} bt</span>
+        </button>)}
       {Object.entries(EFFECTS).map(([k, e]) => {
         const r = responders(k, alvoTrilha.target, d, rig);
         const cls = r.ok === 0 ? "no" : r.ok < r.total ? "part" : "yes";
@@ -888,7 +899,12 @@ function EffectInsp({ selClip, insercao, tracks, labelFor, d, rig, ed, aviso }) 
     <div className="hint">A paleta é derivada do perfil de cada equipamento.
       Grupo misto não é erro: quem não tem a capacidade ignora aquele efeito.</div>
 
-    {clip && <button className="del" onClick={ed.remover}>Remover bloco</button>}
+    {clip && (<>
+      <button className="grava" onClick={ed.duplicar}>Duplicar logo depois</button>
+      <button className="solta" onClick={ed.copiar}>
+        Copiar — cola tocando no vazio de qualquer linha</button>
+      <button className="del" onClick={ed.remover}>Remover bloco</button>
+    </>)}
   </>);
 }
 
@@ -1257,6 +1273,8 @@ export default function App() {
   const [rig, setRig] = useState(RIG_PADRAO);
   const [tracks, setTracks] = useState(TRACKS);
   const [insercao, setInsercao] = useState(null);   // {ti, t} — onde criar bloco
+  const [copiado, setCopiado] = useState(null);     // {trecho, label, prox}
+  const [msel, setMsel] = useState([]);             // ids na seleção múltipla
   const [novaTrilha, setNovaTrilha] = useState(false);
   const [grade, setGrade] = useState(gradePadrao);
   const [analisando, setAnalisando] = useState(false);
@@ -1648,7 +1666,54 @@ export default function App() {
     pedirTrilha: () => setNovaTrilha(true),
     trocarAlvo: ti => setNovaTrilha({ ti }),
     batida: (i, t) => setGrade(g => moverBatida(g, i, t)),
-  }), [marcar, insercao, tracks, selClip, grade]);
+    alternarSel: (id) => setMsel(m =>
+      m.includes(id) ? m.filter(x => x !== id) : [...m, id]),
+    limparSel: () => setMsel(m => m.length ? [] : m),
+    copiar: () => {
+      const ids = msel.length ? msel : selClip ? [selClip.clip.id] : [];
+      const trecho = copiarTrecho(tracks, ids);
+      if (!trecho) return;
+      const label = ids.length > 1 ? `${ids.length} blocos`
+        : EFFECTS[acharClip(tracks, ids[0]).clip.fx].label;
+      /* prox: onde o Ctrl+V cola — no fim do trecho, e cada colada
+         empurra pra frente. É o "alongar o padrão". */
+      setCopiado({ trecho, label, prox: trecho.fim });
+    },
+    duplicar: () => {
+      if (!selClip) return;
+      marcar(); setTracks(ts => duplicarClip(ts, selClip.ti, selClip.clip.id, grade));
+    },
+    colar: () => {
+      if (!insercao || !copiado) return;
+      marcar();
+      setTracks(ts => colarTrecho(ts, copiado.trecho, insercao.t, grade));
+      setInsercao(null);
+    },
+    colarSeq: () => {
+      if (!copiado) return;
+      marcar();
+      setTracks(ts => colarTrecho(ts, copiado.trecho, copiado.prox, grade));
+      setCopiado(c => ({ ...c, prox: c.prox + c.trecho.span }));
+    },
+    duplicarTrilha: (ti) => {
+      marcar(); setTracks(ts => duplicarTrilha(ts, ti)); setNovaTrilha(false);
+    },
+  }), [marcar, insercao, tracks, selClip, grade, copiado, msel]);
+
+  /* Ctrl+C / Ctrl+V no desktop: copia a seleção (múltipla ou o bloco
+     único) e cola em sequência — cada V emenda o trecho no fim do
+     anterior, que é como se alonga um padrão tipo giroflex. */
+  useEffect(() => {
+    const kd = e => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.key === "c") ed.copiar();
+      else if (e.key === "v") { e.preventDefault(); ed.colarSeq(); }
+    };
+    window.addEventListener("keydown", kd);
+    return () => window.removeEventListener("keydown", kd);
+  }, [ed]);
 
   /* Alvo é grupo ou fixture solta — o motor resolve os dois igual. */
   const alvos = useMemo(() => [
@@ -1929,11 +1994,11 @@ export default function App() {
             <div className="pane-t">{croqui ? "Equipamento" : "Efeito"}</div>
             {croqui
               ? <CroquiInsp item={pickItem} chan={d.chan} pix={d.pix} manual={pickItem ? manual[pickItem.id] : null} bytes={bytes} onCanal={setCanal} onCor={setCorNode} flash={flash} onFlash={alternarFlash} onSoltar={soltarManual} onGravar={gravarPose} onEdit={editItem} onDel={delItem} onAdd={addItem} sonda={sonda} setSonda={setSonda} onTrilha={trilhaDaFixture} />
-              : <EffectInsp selClip={selClip} insercao={insercao} tracks={tracks} aviso={selClip ? avisos[selClip.clip.id] : null}
+              : <EffectInsp selClip={selClip} insercao={insercao} tracks={tracks} copiado={copiado} aviso={selClip ? avisos[selClip.clip.id] : null}
                   labelFor={labelFor} d={d} rig={rig} ed={ed} />}
           </aside>
         </div>
-        <Timeline t={t} tracks={tracks} grade={grade} sel={sel} setSel={setSel} onOpen={pickClip} scrub={scrub}
+        <Timeline t={t} tracks={tracks} grade={grade} sel={sel} setSel={setSel} msel={msel} onOpen={pickClip} scrub={scrub}
           labelFor={labelFor} peaks={peaks} ed={ed} insercao={insercao} avisos={avisos} />
       </>)}
 
@@ -1953,8 +2018,13 @@ export default function App() {
               <span className="mono dim">{a.kind}</span>
             </button>
           </React.Fragment>))}
+          {novaTrilha?.ti != null && (
+            <button className="grava" onClick={() => ed.duplicarTrilha(novaTrilha.ti)}>
+              Duplicar esta linha, blocos junto</button>)}
           <div className="hint">Pode repetir alvo: cada trilha é uma camada, e no
-            DMX elas compõem por campo — varredura escreve pan, gobo escreve gobo.</div>
+            DMX elas compõem por campo — varredura escreve pan, gobo escreve gobo.
+            Duplicar + trocar o alvo = reaproveitar uma sequência pronta em outro
+            equipamento.</div>
         </div>
       </>)}
 
@@ -1991,7 +2061,7 @@ export default function App() {
 
         <div className="m-body">
           {mesa && tab !== "croqui" && tab !== "rig" &&
-            <Timeline t={t} tracks={tracks} grade={grade} sel={sel} setSel={setSel} onOpen={pickClip} scrub={scrub} compact
+            <Timeline t={t} tracks={tracks} grade={grade} sel={sel} setSel={setSel} msel={msel} onOpen={pickClip} scrub={scrub} compact
               labelFor={labelFor} ed={ed} insercao={insercao} avisos={avisos} />}
           {palco && tab === "palco" && (
             <div className="pads">
@@ -2011,7 +2081,7 @@ export default function App() {
               </button>
             </div>)}
           {palco && tab === "linha" &&
-            <Timeline t={t} tracks={tracks} grade={grade} sel={sel} setSel={setSel} onOpen={pickClip} scrub={scrub} compact
+            <Timeline t={t} tracks={tracks} grade={grade} sel={sel} setSel={setSel} msel={msel} onOpen={pickClip} scrub={scrub} compact
               labelFor={labelFor} ed={ed} insercao={insercao} avisos={avisos} />}
           {tab === "croqui" && (
             <div className="m-croqui">
@@ -2030,7 +2100,7 @@ export default function App() {
           <div className="sheet" role="dialog" aria-label="Efeito">
             <button className="sheet-grab" aria-label="Fechar"
               onClick={() => { setSheet(false); setInsercao(null); }} />
-            <EffectInsp selClip={selClip} insercao={insercao} tracks={tracks} aviso={selClip ? avisos[selClip.clip.id] : null}
+            <EffectInsp selClip={selClip} insercao={insercao} tracks={tracks} copiado={copiado} aviso={selClip ? avisos[selClip.clip.id] : null}
                   labelFor={labelFor} d={d} rig={rig} ed={ed} />
           </div>
         </>)}
@@ -2239,6 +2309,7 @@ button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .tl-ins{position:absolute;top:0;bottom:0;width:2px;background:#6FD3B4;
   box-shadow:0 0 8px rgba(111,211,180,.8);pointer-events:none}
 .tl-lb.alvo{background:#0B1A18;border-left:2px solid #6FD3B4}
+.clip.msel{outline:2px solid #6FD3B4;outline-offset:1px}
 .tl-x{margin-left:auto;padding:0 5px;font-size:13px;line-height:1;color:#4A5B77;border-radius:4px}
 .tl-x:hover{color:#FF7A9C;background:#1B0E14}
 .tl-add{display:block;width:100%;padding:7px 10px;text-align:left;font-size:10.5px;

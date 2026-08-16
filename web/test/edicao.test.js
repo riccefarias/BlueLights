@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  DIV_ENCAIXE, acharClip, adicionarTrilha, ajustarParam, encaixa, folgaEm,
-  inserirClip, moverClip, proximoId, redimensionarClip, removerClip, removerTrilha,
+  DIV_ENCAIXE, acharClip, adicionarTrilha, ajustarParam, colarTrecho,
+  copiarTrecho, duplicarClip, duplicarTrilha, encaixa, folgaEm, inserirClip,
+  moverClip, proximoId, redimensionarClip, removerClip, removerTrilha,
   retargetTrilha, trocarEfeito,
 } from "../src/modelo/edicao.js";
 import { BEAT, DURATION, EFFECTS, gradePadrao } from "../src/modelo/sequencia.js";
@@ -175,4 +176,64 @@ test("retarget desacopla linha de equipamento: troca alvo e kind, clips ficam", 
   assert.equal(re[ti].clips.length, 1);          // o bloco sobreviveu à troca
   assert.equal(re[ti].id, com[ti].id);           // é a mesma linha
   assert.equal(re[0].target, com[0].target);     // vizinhas intactas
+});
+
+/* O caso do giroflex: pisca alternada em 2 linhas, copiada como trecho
+   e colada em sequência pra alongar a animação. */
+const giroflex = () => ([
+  { id: "t1", target: "f1", kind: "pixel", clips: [
+    { id: "c1", fx: "cor", t0: 0, t1: BEAT, p: { hue: 0 } }] },
+  { id: "t2", target: "f2", kind: "pixel", clips: [
+    { id: "c2", fx: "cor", t0: BEAT, t1: BEAT * 2, p: { hue: .66 },
+      kf: { hue: [{ u: 0, v: 0 }, { u: 1, v: .5 }] } }] },
+]);
+
+test("copiar trecho guarda trilha, offset relativo e curvas", () => {
+  const tr = copiarTrecho(giroflex(), ["c1", "c2"]);
+  assert.equal(tr.span, BEAT * 2);
+  assert.equal(tr.fim, BEAT * 2);
+  const [a, b] = tr.itens;
+  assert.deepEqual([a.ti, a.dt, a.dur], [0, 0, BEAT]);
+  assert.deepEqual([b.ti, b.dt, b.dur], [1, BEAT, BEAT]);
+  assert.equal(b.kf.hue[1].v, .5);                 // a curva veio junto
+});
+
+test("colar em sequência alonga o padrão sem colidir", () => {
+  const base2 = giroflex();
+  const tr = copiarTrecho(base2, ["c1", "c2"]);
+  let ts = colarTrecho(base2, tr, tr.fim, G);      // 1ª colada: emenda no fim
+  ts = colarTrecho(ts, tr, tr.fim + tr.span, G);   // 2ª: emenda de novo
+  assert.equal(ts[0].clips.length, 3);
+  assert.equal(ts[1].clips.length, 3);
+  // a alternância continua: t1 pisca nos beats pares, t2 nos ímpares
+  assert.deepEqual(ts[0].clips.map(c => c.t0 / BEAT), [0, 2, 4]);
+  assert.deepEqual(ts[1].clips.map(c => c.t0 / BEAT), [1, 3, 5]);
+  // cópia é independente: mexer nela não muda o original
+  const novo = ts[1].clips[1];
+  novo.kf.hue[1].v = .9;
+  assert.equal(ts[1].clips[0].kf.hue[1].v, .5);
+  // ids únicos no documento inteiro
+  const ids = ts.flatMap(t => t.clips.map(c => c.id));
+  assert.equal(new Set(ids).size, ids.length);
+});
+
+test("colar onde não cabe pula o item e cola o resto", () => {
+  const base2 = giroflex();
+  // obstáculo na t2 exatamente onde o item dela cairia
+  base2[1].clips.push({ id: "c9", fx: "cor", t0: BEAT * 3, t1: BEAT * 4, p: {} });
+  const tr = copiarTrecho(base2, ["c1", "c2"]);
+  const ts = colarTrecho(base2, tr, BEAT * 2, G);
+  assert.deepEqual(ts[0].clips.map(c => c.t0 / BEAT), [0, 2]);   // colou
+  assert.deepEqual(ts[1].clips.map(c => c.t0 / BEAT), [1, 3]);   // pulou o ocupado
+});
+
+test("duplicar clip cola logo depois; duplicar trilha copia blocos com ids novos", () => {
+  const ts = duplicarClip(giroflex(), 0, "c1", G);
+  assert.deepEqual(ts[0].clips.map(c => c.t0 / BEAT), [0, 1]);
+  const td = duplicarTrilha(giroflex(), 1);
+  assert.equal(td.length, 3);
+  assert.equal(td[2].target, "f2");
+  assert.equal(td[2].clips[0].kf.hue[1].v, .5);
+  assert.notEqual(td[2].clips[0].id, td[1].clips[0].id);
+  assert.notEqual(td[2].id, td[1].id);
 });

@@ -179,6 +179,80 @@ export function retargetTrilha(tracks, ti, target, kind) {
   return tracks.map((tr, i) => i === ti ? { ...tr, target, kind } : tr);
 }
 
+/* ---------- copiar e reaproveitar ---------- */
+
+const clonar = v => JSON.parse(JSON.stringify(v));
+
+/** Retrato de um clip pra colar depois: efeito, duração e parâmetros,
+    curvas junto. Sem id nem posição — isso nasce no colar. */
+export function retratoDoClip(clip) {
+  const r = { fx: clip.fx, dur: clip.t1 - clip.t0, p: clonar(clip.p) };
+  if (clip.kf) r.kf = clonar(clip.kf);
+  return r;
+}
+
+/** Cola um retrato no vão que contém `t`, em QUALQUER trilha — colar
+    numa linha de outro alvo é justamente o reaproveitamento. Mantém a
+    duração original; vão menor encurta até o mínimo, menor que isso
+    não cola. */
+export function colarClip(tracks, ti, retrato, t, grade) {
+  return comTrilha(tracks, ti, tr => {
+    const folga = folgaEm(tr, t, grade);
+    if (!folga) return tr;
+    const min = durMin(grade, folga.ini);
+    const t0 = limita(encaixa(t, grade), folga.ini, Math.max(folga.ini, folga.fim - min));
+    const t1 = Math.min(folga.fim, t0 + retrato.dur);
+    if (t1 - t0 < min) return tr;
+    const clip = { id: proximoId(tracks), fx: retrato.fx, t0, t1, p: clonar(retrato.p) };
+    if (retrato.kf) clip.kf = clonar(retrato.kf);
+    return comClips(tr, [...tr.clips, clip].sort((a, b) => a.t0 - b.t0));
+  });
+}
+
+/** Duplica um clip na própria trilha, colado logo depois do original.
+    Sem vão ali, não mexe — igual às outras edições sem espaço. */
+export function duplicarClip(tracks, ti, id, grade) {
+  const clip = tracks[ti]?.clips.find(c => c.id === id);
+  if (!clip) return tracks;
+  return colarClip(tracks, ti, retratoDoClip(clip), clip.t1, grade);
+}
+
+/** Duplica a linha inteira, blocos junto, logo abaixo da original.
+    Com a troca de alvo, vira o "fiz pro farol 1, replico pro farol 2". */
+export function duplicarTrilha(tracks, ti) {
+  const tr = tracks[ti];
+  if (!tr) return tracks;
+  let n = parseInt(String(proximoId(tracks)).replace(/^\D+/, ""), 10);
+  const copia = { id: proximoIdTrilha(tracks), target: tr.target, kind: tr.kind,
+                  clips: tr.clips.map(c => ({ ...clonar(c), id: `c${n++}` })) };
+  return [...tracks.slice(0, ti + 1), copia, ...tracks.slice(ti + 1)];
+}
+
+/** Copia um conjunto de clips como TRECHO: cada um lembra a trilha e o
+    deslocamento relativo ao início do conjunto. É a referência completa
+    de um padrão (o giroflex de 2 pixels em 2 linhas, por exemplo). */
+export function copiarTrecho(tracks, ids) {
+  const achados = [];
+  let t0min = Infinity, t1max = 0;
+  tracks.forEach((tr, ti) => tr.clips.forEach(c => {
+    if (!ids.includes(c.id)) return;
+    achados.push({ ti, c });
+    t0min = Math.min(t0min, c.t0); t1max = Math.max(t1max, c.t1);
+  }));
+  if (!achados.length) return null;
+  return { span: t1max - t0min, fim: t1max,
+           itens: achados.map(({ ti, c }) => ({ ti, dt: c.t0 - t0min, ...retratoDoClip(c) })) };
+}
+
+/** Cola o trecho ancorado em `t`: cada clip volta pra SUA trilha, no
+    deslocamento que tinha. Item sem vão é pulado, o resto cola —
+    colar de novo no fim do trecho é como se alonga um padrão. */
+export function colarTrecho(tracks, trecho, t, grade) {
+  let ts = tracks;
+  for (const it of trecho.itens) ts = colarClip(ts, it.ti, it, t + it.dt, grade);
+  return ts;
+}
+
 /** Onde está um clip, por id. */
 export function acharClip(tracks, id) {
   for (let ti = 0; ti < tracks.length; ti++) {
