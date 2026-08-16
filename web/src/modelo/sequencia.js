@@ -22,9 +22,9 @@ export const EFFECTS = {
   wash:   { label: "Lavagem", color: "#7A5CFF", needs: ["rgb"],
             p: { rate: .0625, spread: 1 } },
   chase:  { label: "Corrida", color: "#00C2A8", needs: ["rgb"],
-            p: { speed: .5, hue: .55 } },
+            p: { speed: .5, hue: .55, sat: .8 } },
   pulse:  { label: "Pulso", color: "#2B6BFF", needs: ["rgb"],
-            p: { div: 1, hue: .58 } },
+            p: { div: 1, hue: .58, sat: .9 } },
   /* Blocos manuais: aqui quem manda é a pessoa, não uma fórmula. `cor`
      pinta os pixels parado; `pose` posiciona a cabeça. Com curva A→B em
      cima, pose vira movimento keyframado — é o "sequência manual". */

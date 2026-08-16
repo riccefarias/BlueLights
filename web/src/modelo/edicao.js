@@ -253,6 +253,31 @@ export function colarTrecho(tracks, trecho, t, grade) {
   return ts;
 }
 
+/** Move um conjunto de clips JUNTO, preservando os offsets relativos.
+    `idAncora` é o bloco sob o dedo; o dt que ele pede é clampado pelo
+    espaço livre de TODOS — o grupo inteiro para no primeiro obstáculo,
+    em vez de um clip atravessar vizinho. */
+export function moverTrecho(tracks, ids, idAncora, t0Alvo, grade) {
+  const anc = acharClip(tracks, idAncora);
+  if (!anc || !ids.includes(idAncora)) return tracks;
+  let dt = encaixa(t0Alvo, grade) - anc.clip.t0;
+  for (const tr of tracks) {
+    const grupo = tr.clips.filter(c => ids.includes(c.id));
+    if (!grupo.length) continue;
+    const outros = tr.clips.filter(c => !ids.includes(c.id));
+    for (const c of grupo) {
+      const antes = Math.max(0, ...outros.filter(o => o.t1 <= c.t0).map(o => o.t1));
+      const depois = Math.min(grade.duracao, ...outros.filter(o => o.t0 >= c.t1).map(o => o.t0));
+      dt = Math.max(antes - c.t0, Math.min(depois - c.t1, dt));
+    }
+  }
+  if (!dt) return tracks;
+  return tracks.map(tr => tr.clips.some(c => ids.includes(c.id))
+    ? comClips(tr, tr.clips.map(c =>
+        ids.includes(c.id) ? { ...c, t0: c.t0 + dt, t1: c.t1 + dt } : c))
+    : tr);
+}
+
 /** Onde está um clip, por id. */
 export function acharClip(tracks, id) {
   for (let ti = 0; ti < tracks.length; ti++) {

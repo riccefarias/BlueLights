@@ -12,8 +12,9 @@ import { rastrearBatidas } from "./motor/batidas.js";
 import { paraMono } from "./motor/bpm.js";
 import {
   acharClip, adicionarTrilha, ajustarKf, ajustarParam, colarTrecho, copiarTrecho,
-  curvarParam, duplicarClip, duplicarTrilha, inserirClip, moverClip,
-  redimensionarClip, removerClip, removerTrilha, retargetTrilha, trocarEfeito,
+  curvarParam, duplicarClip, duplicarTrilha, encaixa, inserirClip, moverClip,
+  moverTrecho, redimensionarClip, removerClip, removerTrilha, retargetTrilha,
+  trocarEfeito,
 } from "./modelo/edicao.js";
 import { capsOf, derive, responders } from "./motor/derivar.js";
 import { renderFrame } from "./motor/render.js";
@@ -597,13 +598,16 @@ function Timeline({ t, tracks, grade, sel, setSel, msel, onOpen, scrub, compact,
     /* Ctrl/Cmd+clique: entra/sai da seleção múltipla (o trecho que o
        Ctrl+C copia inteiro). Não arrasta nem abre nada. */
     if ((e.ctrlKey || e.metaKey) && !borda) { ed.alternarSel(clip.id); return; }
+    /* Pegar um bloco que está NA seleção múltipla arrasta o conjunto —
+       pegar fora dela desfaz a seleção e arrasta só ele. */
+    const grupo = !borda && msel?.length > 1 && msel.includes(clip.id) ? msel : null;
     setSel(clip.id);
-    ed.limparSel();
+    if (!grupo) ed.limparSel();
     const linha = e.currentTarget.closest(".tl-row");
     const w = linha?.getBoundingClientRect().width || 1;
     // Dedo treme mais que mouse: no touch a folga antes de virar arrasto
     // é maior, senão todo tap conta como movimento.
-    drag.current = { ti, id: clip.id, borda, x0: e.clientX, w,
+    drag.current = { ti, id: clip.id, borda, grupo, x0: e.clientX, w,
                      folga: e.pointerType === "touch" ? 8 : 3,
                      t0: clip.t0, t1: clip.t1, mexeu: false };
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -621,6 +625,7 @@ function Timeline({ t, tracks, grade, sel, setSel, msel, onOpen, scrub, compact,
     const dt = ((e.clientX - dr.x0) / dr.w) * grade.duracao;
     if (dr.borda) ed.redimensionar(dr.ti, dr.id, dr.borda,
       (dr.borda === "ini" ? dr.t0 : dr.t1) + dt);
+    else if (dr.grupo) ed.moverGrupo(dr.grupo, dr.id, dr.t0 + dt);
     else ed.mover(dr.ti, dr.id, dr.t0 + dt);
   };
 
@@ -1624,6 +1629,8 @@ export default function App() {
 
   /* ---------- edição da timeline ---------- */
 
+  const tRef = useRef(0); tRef.current = t;   // playhead pro Ctrl+V, fora das deps
+
   const ed = useMemo(() => ({
     marcar,
     mover: (ti, id, t0) => setTracks(ts => moverClip(ts, ti, id, t0, grade)),
@@ -1675,9 +1682,7 @@ export default function App() {
       if (!trecho) return;
       const label = ids.length > 1 ? `${ids.length} blocos`
         : EFFECTS[acharClip(tracks, ids[0]).clip.fx].label;
-      /* prox: onde o Ctrl+V cola — no fim do trecho, e cada colada
-         empurra pra frente. É o "alongar o padrão". */
-      setCopiado({ trecho, label, prox: trecho.fim });
+      setCopiado({ trecho, label, prox: null, ultimoT: null });
     },
     duplicar: () => {
       if (!selClip) return;
@@ -1692,9 +1697,15 @@ export default function App() {
     colarSeq: () => {
       if (!copiado) return;
       marcar();
-      setTracks(ts => colarTrecho(ts, copiado.trecho, copiado.prox, grade));
-      setCopiado(c => ({ ...c, prox: c.prox + c.trecho.span }));
+      /* Cola NO MARCADOR. Se o marcador não mexeu desde a última colada,
+         emenda no fim dela — repetir o V alonga o padrão sem colidir. */
+      const tp = encaixa(tRef.current, grade);
+      const anc = copiado.prox != null && copiado.ultimoT === tp ? copiado.prox : tp;
+      setTracks(ts => colarTrecho(ts, copiado.trecho, anc, grade));
+      setCopiado(c => ({ ...c, prox: anc + c.trecho.span, ultimoT: tp }));
     },
+    moverGrupo: (ids, ancora, t0) =>
+      setTracks(ts => moverTrecho(ts, ids, ancora, t0, grade)),
     duplicarTrilha: (ti) => {
       marcar(); setTracks(ts => duplicarTrilha(ts, ti)); setNovaTrilha(false);
     },

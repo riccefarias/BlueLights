@@ -37,14 +37,15 @@ export function renderPixelFx(fx, p, n, tL, tG, grade) {
     for (let i = 0; i < n; i++) {
       let d = Math.abs(i - pos); d = Math.min(d, n - d);
       const b = Math.max(0, 1 - d * .75);
-      out[i] = hsv(p.hue ?? .55, .8, b * b);
+      out[i] = hsv(p.hue ?? .55, p.sat ?? .8, b * b);
     }
   } else if (fx === "strobe") {
     const b = Math.exp(-grade.faseEm(tG, p.div ?? 2) * 9);
     for (let i = 0; i < n; i++) out[i] = hsv(p.hue ?? 0, p.sat ?? 0, b);
   } else if (fx === "pulse") {
     const b = Math.pow(1 - grade.faseEm(tG, p.div ?? 1), 2.2);
-    for (let i = 0; i < n; i++) out[i] = hsv(p.hue ?? .58, .9, b);
+    // sat 0 = pulso branco (giroflex de xenon), sem precisar do strobo
+    for (let i = 0; i < n; i++) out[i] = hsv(p.hue ?? .58, p.sat ?? .9, b);
   } else if (fx === "cor") {
     // manual: a cor que a pessoa escolheu, parada — com curva A→B ela anda
     const c = hsv(p.hue ?? .6, p.sat ?? .9, p.dim ?? 1);

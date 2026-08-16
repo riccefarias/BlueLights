@@ -237,3 +237,18 @@ test("duplicar clip cola logo depois; duplicar trilha copia blocos com ids novos
   assert.notEqual(td[2].clips[0].id, td[1].clips[0].id);
   assert.notEqual(td[2].id, td[1].id);
 });
+
+test("mover trecho: o grupo anda junto e para no primeiro obstáculo", async () => {
+  const { moverTrecho } = await import("../src/modelo/edicao.js");
+  const base2 = giroflex();
+  base2[1].clips.push({ id: "c9", fx: "cor", t0: BEAT * 4, t1: BEAT * 5, p: {} });
+  // arrasta c1 (âncora) pra frente 1 batida: c2 vai junto
+  let ts = moverTrecho(base2, ["c1", "c2"], "c1", BEAT, G);
+  assert.deepEqual([ts[0].clips[0].t0, ts[1].clips[0].t0].map(v => v / BEAT), [1, 2]);
+  // pedir 10 batidas: o c2 esbarra no c9 (t0 4) e o grupo INTEIRO para
+  ts = moverTrecho(base2, ["c1", "c2"], "c1", BEAT * 10, G);
+  assert.deepEqual([ts[0].clips[0].t0, ts[1].clips[0].t0].map(v => v / BEAT), [2, 3]);
+  // pra trás além do zero também clampa em grupo
+  ts = moverTrecho(base2, ["c1", "c2"], "c2", 0, G);
+  assert.deepEqual([ts[0].clips[0].t0, ts[1].clips[0].t0].map(v => v / BEAT), [0, 1]);
+});
