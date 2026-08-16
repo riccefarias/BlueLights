@@ -6,7 +6,7 @@
 
 import { RIG_PADRAO } from "../modelo/rig.js";
 import { DURATION, FPS, TRACKS } from "../modelo/sequencia.js";
-import { derive } from "./derivar.js";
+import { derive, impressaoDoRig } from "./derivar.js";
 import { renderFrame } from "./render.js";
 import { serializarFrame } from "./canais.js";
 import { escreverFseq } from "./fseq.js";
@@ -44,6 +44,7 @@ export function renderizarSequencia({
  */
 export async function exportarFseq(opcoes = {}) {
   const { compressao = "zlib", midia, uniqueId, ...resto } = opcoes;
-  const { canais, quadros, dados, stepTimeMs } = renderizarSequencia(resto);
-  return escreverFseq({ canais, quadros, dados, stepTimeMs, compressao, midia, uniqueId });
+  const { canais, quadros, dados, stepTimeMs, derivado } = renderizarSequencia(resto);
+  return escreverFseq({ canais, quadros, dados, stepTimeMs, compressao, midia, uniqueId,
+    rig: impressaoDoRig(derivado) });
 }

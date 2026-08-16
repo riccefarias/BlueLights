@@ -2,8 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { inflateSync } from "node:zlib";
 
-import { escreverFseq, lerFseq, quadroDe, quadrosPorBloco } from "../src/motor/fseq.js";
+import { conferirRig, escreverFseq, lerFseq, quadroDe, quadrosPorBloco } from "../src/motor/fseq.js";
 import { exportarFseq, renderizarSequencia } from "../src/motor/exportar.js";
+import { derive, impressaoDoRig } from "../src/motor/derivar.js";
+import { RIG_PADRAO } from "../src/modelo/rig.js";
 import { DURATION, FPS } from "../src/modelo/sequencia.js";
 
 const ID = 0x0123456789ABCDEFn;
@@ -123,6 +125,61 @@ test("o quadro exportado é o mesmo que o preview desenha", async () => {
     assert.deepEqual([...quadroDe(seq, i)],
       [...dados.subarray(i * canais, (i + 1) * canais)], `quadro ${i} divergiu`);
   }
+});
+
+/* Carimbo do croqui: tocar um fseq velho não dá erro, só manda pan
+   pro canal de gobo. O aviso tem que vir do arquivo. */
+
+test("o fseq exportado carrega o carimbo do croqui", async () => {
+  const seq = await lerFseq(await exportarFseq());
+  const atual = impressaoDoRig(derive(RIG_PADRAO));
+  assert.equal(seq.rig.ch, 98);
+  assert.equal(seq.rig.fp, atual.fp);
+  assert.deepEqual(conferirRig(seq, atual), { ok: true, aviso: null });
+});
+
+test("mudança que desloca canal reprova o arquivo antigo", async () => {
+  const seq = await lerFseq(await exportarFseq());
+
+  // trocar a wash central por uma beam muda footprint e desloca a head seguinte
+  const outroPerfil = RIG_PADRAO.map(i => i.id === "h2" ? { ...i, pf: "beam-16" } : i);
+  const r1 = conferirRig(seq, impressaoDoRig(derive(outroPerfil)));
+  assert.equal(r1.ok, false);
+  assert.match(r1.aviso, /98 canais.*102/);
+
+  // farol de 3 pra 1 node: mesmo tipo de estrago, sem trocar equipamento
+  const menosNodes = RIG_PADRAO.map(i => i.id === "f1" ? { ...i, n: 1 } : i);
+  assert.equal(conferirRig(seq, impressaoDoRig(derive(menosNodes))).ok, false);
+
+  // reordenar no croqui mantém o total de canais mas troca o significado
+  const trocado = RIG_PADRAO.map(i => i.id === "h1" ? { ...i, x: 900 } : i);
+  const r2 = conferirRig(seq, impressaoDoRig(derive(trocado)));
+  assert.equal(r2.ok, false);
+  assert.match(r2.aviso, /croqui mudou/);
+});
+
+test("mexer no croqui sem deslocar canal não invalida nada", async () => {
+  const seq = await lerFseq(await exportarFseq());
+  // arrastar dois pixels e renomear não muda o significado de byte nenhum
+  const nudge = RIG_PADRAO.map(i =>
+    i.id === "f2" ? { ...i, x: i.x + 2, lb: "outro nome" } : i);
+  assert.deepEqual(conferirRig(seq, impressaoDoRig(derive(nudge))), { ok: true, aviso: null });
+});
+
+test("arquivo sem carimbo passa com aviso, não com reprovação", async () => {
+  const { canais, quadros, dados, stepTimeMs } = renderizarSequencia();
+  const seq = await lerFseq(await escreverFseq({ canais, quadros, dados, stepTimeMs,
+    uniqueId: ID }));                                   // sem `rig`
+  assert.equal(seq.rig, null);
+  const r = conferirRig(seq, impressaoDoRig(derive(RIG_PADRAO)));
+  assert.equal(r.ok, true);
+  assert.match(r.aviso, /sem carimbo/);
+});
+
+test("o carimbo convive com o nome da mídia no mesmo arquivo", async () => {
+  const seq = await lerFseq(await exportarFseq({ midia: "faixa07.mp3" }));
+  assert.equal(seq.midia, "faixa07.mp3");
+  assert.equal(seq.rig.fp, impressaoDoRig(derive(RIG_PADRAO)).fp);
 });
 
 test("o exportador recusa o que não cabe no formato", async () => {

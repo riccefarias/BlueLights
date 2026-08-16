@@ -43,6 +43,11 @@ const VAR_CABECALHO = 4;
 const BLOCO_ALVO = 64 * 1024;
 const MAX_BLOCOS = 255;
 
+/* Carimbo do croqui: `versão;canais;impressão`. Código de duas letras
+   nosso, no espaço de cabeçalho variável do próprio formato. */
+export const CODIGO_RIG = "bl";
+const VERSAO_RIG = 1;
+
 const arredonda4 = v => (v + 3) & ~3;
 
 /* zlib pelo padrão da plataforma: CompressionStream existe no browser
@@ -78,11 +83,12 @@ export function quadrosPorBloco(canais, quadros) {
  * @param {"nenhuma"|"zlib"} [o.compressao]
  * @param {bigint} [o.uniqueId]   id do arquivo; padrão é o relógio
  * @param {string} [o.midia]      nome do arquivo de áudio ("mf")
+ * @param {{ch:number,fp:string}} [o.rig] carimbo do croqui ("bl")
  * @returns {Promise<Uint8Array>}
  */
 export async function escreverFseq({
   canais, quadros, dados, stepTimeMs = 25,
-  compressao = "zlib", uniqueId, midia,
+  compressao = "zlib", uniqueId, midia, rig,
 }) {
   if (!Number.isInteger(canais) || canais <= 0) throw new Error("canais inválido");
   if (!Number.isInteger(quadros) || quadros <= 0) throw new Error("quadros inválido");
@@ -113,12 +119,16 @@ export async function escreverFseq({
 
   // 2. Cabeçalhos variáveis.
   const vars = [];
-  if (midia) {
-    const nome = new TextEncoder().encode(midia);
-    const dado = new Uint8Array(nome.length + 1);   // terminado em NUL
-    dado.set(nome);
-    vars.push({ codigo: "mf", dado });
-  }
+  const texto = s => {
+    const b = new TextEncoder().encode(s);
+    const dado = new Uint8Array(b.length + 1);      // terminado em NUL
+    dado.set(b);
+    return dado;
+  };
+  if (midia) vars.push({ codigo: "mf", dado: texto(midia) });
+  /* "bl" é código nosso. O FPP e o xLights ignoram código que não
+     conhecem — só logam e seguem —, então isto não quebra compatibilidade. */
+  if (rig) vars.push({ codigo: CODIGO_RIG, dado: texto(`${VERSAO_RIG};${rig.ch};${rig.fp}`) });
   const varBytes = vars.reduce((s, v) => s + VAR_CABECALHO + v.dado.length, 0);
 
   const tamCabecalho = CABECALHO + nBlocos * BLOCO_INDICE + 0 * FAIXA_ESPARSA;
@@ -203,14 +213,19 @@ export async function lerFseq(bytes) {
   }
   p += nEsparsas * FAIXA_ESPARSA;
 
-  let midia = null;
+  let midia = null, rig = null;
   while (p + VAR_CABECALHO <= offsetDados) {
     const tam = dv.getUint16(p, true);
     if (tam < VAR_CABECALHO || p + tam > offsetDados) break;
     const codigo = String.fromCharCode(u8[p + 2], u8[p + 3]);
-    const dado = u8.subarray(p + 4, p + tam);
-    if (codigo === "mf")
-      midia = new TextDecoder().decode(dado).replace(/\0+$/, "");
+    const txt = new TextDecoder().decode(u8.subarray(p + 4, p + tam)).replace(/\0+$/, "");
+    if (codigo === "mf") midia = txt;
+    if (codigo === CODIGO_RIG) {
+      const [v, ch, fp] = txt.split(";");
+      // Carimbo de versão futura: melhor ignorar do que fingir que entendeu
+      // e reprovar um arquivo bom.
+      if (Number(v) === VERSAO_RIG && fp) rig = { ch: Number(ch), fp };
+    }
     p += tam;
   }
 
@@ -232,7 +247,25 @@ export async function lerFseq(bytes) {
     throw new Error(`dado tem ${dados.length} bytes, cabeçalho promete ${canais * quadros}`);
 
   return { canais, quadros, stepTimeMs, compressao: NOME_COMPRESSAO[tipo],
-           uniqueId, midia, dados };
+           uniqueId, midia, rig, dados };
+}
+
+/**
+ * O arquivo foi renderizado pra este croqui? Avisar é o ponto: tocar um
+ * fseq velho não dá erro nenhum, só manda pan pro canal de gobo.
+ * @param {{rig:object|null,canais:number}} seq  saída de lerFseq
+ * @param {{ch:number,fp:string}} atual          saída de impressaoDoRig
+ */
+export function conferirRig(seq, atual) {
+  if (!seq.rig)
+    return { ok: true, aviso: "arquivo sem carimbo de croqui — não dá pra conferir" };
+  if (seq.rig.ch !== atual.ch)
+    return { ok: false, aviso:
+      `arquivo tem ${seq.rig.ch} canais, o croqui de agora tem ${atual.ch}` };
+  if (seq.rig.fp !== atual.fp)
+    return { ok: false, aviso:
+      "mesmo número de canais, mas o croqui mudou — reexporte antes de usar" };
+  return { ok: true, aviso: null };
 }
 
 /** Um quadro específico, já fatiado. Conveniência pra teste e inspeção. */

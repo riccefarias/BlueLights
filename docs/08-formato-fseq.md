@@ -39,7 +39,7 @@ Depois do cabeçalho fixo, em ordem:
 1. **Índice de blocos** — `blocos × (u32 primeiro quadro, u32 bytes comprimidos)`
 2. **Faixas esparsas** — não usamos, sempre 0
 3. **Cabeçalhos variáveis** — `u16 tamanho` (contando estes 4 bytes),
-   2 bytes de código, dado. Escrevemos `mf`, o nome do arquivo de mídia
+   2 bytes de código, dado. Escrevemos `mf` e `bl` (abaixo)
 4. **Dado de canal**, alinhado em múltiplo de 4
 
 ## Blocos
@@ -49,6 +49,42 @@ Alvo de 64KB descomprimidos por bloco, o mesmo do FPP, com teto de 255 blocos.
 O bloco é a unidade de leitura do player: para tocar o quadro *n*, o ESP
 acha no índice o bloco que o contém, lê só ele e descomprime. Bloco menor
 desperdiça índice; bloco maior faz o ESP segurar RAM à toa e encarece o seek.
+
+## Carimbo do croqui — cabeçalho `bl`
+
+Um `.fseq` **só faz sentido contra o croqui que o gerou**. A numeração de
+canal foi cozida junto no render: mover uma head, trocar o perfil de uma
+cabeça ou passar um farol de 1 pra 3 nodes envelhece todo arquivo já
+exportado.
+
+O jeito como isso morde é feio, porque **o arquivo não dá erro — ele toca**.
+Os bytes de pan caem no canal de gobo da cabeça seguinte e a luz enlouquece
+só naquela faixa. Num evento, é meia hora de gente olhando cabo.
+
+Daí o carimbo, num cabeçalho variável de código `bl`:
+
+```
+1;98;b961683a
+│  │  └─ impressão FNV-1a do mapa de canais
+│  └──── total de canais
+└─────── versão do carimbo
+```
+
+Código de duas letras é espaço do próprio formato, e leitor que não conhece
+o código só o ignora — conferido no `parseVariableHeaders` do FPP. Arquivo
+carimbado continua tocando no FPP e abrindo no xLights.
+
+**É a impressão do mapa de canais, não do croqui cru.** Entra o que muda o
+significado de um byte: ordem, nodes, ordem de cor, perfil de cada cabeça.
+Não entram rótulo nem posição em si — arrastar um farol dois pixels sem
+mudar a ordem não invalida nada, e não deve invalidar mesmo.
+
+Do lado de cá quem confere é `conferirRig()`. Do lado do ESP é o mesmo
+trabalho: comparar dois números antes de tocar, e cair na animação de
+fallback em vez de mandar lixo pro barramento.
+
+Arquivo **sem** carimbo — vindo do xLights, por exemplo — passa com aviso,
+não com reprovação.
 
 ## O que sai daqui
 

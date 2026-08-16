@@ -16,3 +16,8 @@ O leitor de fseq tem o contrato já escrito e testado do outro lado: o layout
 está em `../docs/08-formato-fseq.md` e a implementação de referência em
 `../web/src/motor/fseq.js`. Passo de 25ms (40fps), blocos zlib de ~64KB —
 descompressão pelo zlib que já vem no ESP-IDF.
+
+**Conferir o carimbo `bl` antes de tocar.** É o cabeçalho variável que diz
+pra qual croqui o arquivo foi renderizado. Arquivo velho não dá erro, ele
+toca — e manda pan pro canal de gobo. Não batendo, cair na animação de
+fallback em vez de despejar lixo no barramento.
